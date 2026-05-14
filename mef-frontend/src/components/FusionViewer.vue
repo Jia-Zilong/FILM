@@ -72,6 +72,9 @@ const sliderValue = ref(50)
   background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
   border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .compare-container {
@@ -84,6 +87,9 @@ const sliderValue = ref(50)
 .compare-before {
   position: absolute;
   inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .compare-after img,
