@@ -162,11 +162,11 @@ onBeforeUnmount(clearPreviews)
 /* ===== Image Area ===== */
 .image-area {
   display: grid;
-  grid-template-columns: 1fr 1fr 2fr;
+  grid-template-columns: 1fr 1fr 1.5fr;
   gap: 12px;
-  height: 55vh;
+  height: 50vh;
   min-height: 260px;
-  max-height: 650px;
+  max-height: 580px;
 }
 
 .source-col {
