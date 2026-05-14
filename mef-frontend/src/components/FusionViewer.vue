@@ -69,7 +69,7 @@ const sliderValue = ref(50)
   flex: 1;
   position: relative;
   overflow: hidden;
-  background: var(--color-card);
+  background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
   border-radius: 8px;
 }
@@ -88,9 +88,9 @@ const sliderValue = ref(50)
 
 .compare-after img,
 .compare-before img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 .compare-divider {

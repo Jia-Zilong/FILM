@@ -164,9 +164,9 @@ onBeforeUnmount(clearPreviews)
   display: grid;
   grid-template-columns: 1fr 1fr 2fr;
   gap: 12px;
-  height: calc(100vh - 200px);
-  min-height: 300px;
-  max-height: 800px;
+  height: 55vh;
+  min-height: 260px;
+  max-height: 650px;
 }
 
 .source-col {
@@ -190,20 +190,20 @@ onBeforeUnmount(clearPreviews)
   display: flex;
   align-items: center;
   justify-content: center;
-  background: var(--color-card);
+  background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
   border-radius: 8px;
   overflow: hidden;
 }
 
 .img-container.has-img {
-  background: transparent;
+  background: var(--color-bg-subtle);
 }
 
 .img-container img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
+  max-width: 100%;
+  max-height: 100%;
+  object-fit: contain;
 }
 
 .result-col {
