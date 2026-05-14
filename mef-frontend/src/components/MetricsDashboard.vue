@@ -39,8 +39,8 @@ const initRadarChart = () => {
         { name: 'VIF', max: 2 },
         { name: 'Qabf', max: 1.0 }
       ],
-      radius: '65%',
-      axisName: { color: '#64748B', fontSize: 11, fontWeight: 600 },
+      radius: '60%',
+      axisName: { color: '#64748B', fontSize: 10, fontWeight: 600 },
       splitArea: { areaStyle: { color: ['rgba(248, 250, 252, 0.5)', 'rgba(241, 245, 249, 0.3)'] } },
       axisLine: { lineStyle: { color: '#E2E8F0' } },
       splitLine: { lineStyle: { color: '#E2E8F0' } }
@@ -74,17 +74,17 @@ const initBarChart = () => {
   const qabfVal = props.metrics.Qabf != null ? props.metrics.Qabf : 0
 
   barChart.setOption({
-    grid: { top: 16, bottom: 28, left: 35, right: 10 },
+    grid: { top: 12, bottom: 22, left: 30, right: 8 },
     xAxis: {
       type: 'category',
       data: ['EN', 'SD', 'SF', 'AG', 'VIF', 'Qabf'],
       axisLine: { lineStyle: { color: '#E2E8F0' } },
-      axisLabel: { color: '#64748B', fontSize: 11, fontWeight: 600 }
+      axisLabel: { color: '#64748B', fontSize: 10, fontWeight: 600 }
     },
     yAxis: {
       type: 'value',
       splitLine: { lineStyle: { color: '#F1F5F9' } },
-      axisLabel: { color: '#94A3B8', fontSize: 10 }
+      axisLabel: { color: '#94A3B8', fontSize: 9 }
     },
     series: [{
       type: 'bar',
@@ -96,8 +96,8 @@ const initBarChart = () => {
         { value: vifVal, itemStyle: { color: '#8B5CF6' } },
         { value: qabfVal, itemStyle: { color: '#06B6D4' } }
       ],
-      barWidth: 20,
-      itemStyle: { borderRadius: '6px 6px 0 0' },
+      barWidth: 18,
+      itemStyle: { borderRadius: '4px 4px 0 0' },
       animationDuration: 600,
       animationEasing: 'cubicOut'
     }]
@@ -135,71 +135,37 @@ onBeforeUnmount(() => {
 
 <template>
   <Transition name="slide-up">
-    <div v-if="metrics" class="metrics-dashboard">
-      <div class="metrics-grid">
-        <div class="metrics-table">
-          <div class="table-title">
-            <el-icon class="title-icon"><DataAnalysis /></el-icon>
-            评价指标
-          </div>
-          <table class="data-table">
-            <tbody>
-              <tr>
-                <td class="label-cell">EN (信息熵)</td>
-                <td class="value-cell">{{ metrics.EN.toFixed(4) }}</td>
-              </tr>
-              <tr>
-                <td class="label-cell">SD (标准差)</td>
-                <td class="value-cell">{{ metrics.SD.toFixed(4) }}</td>
-              </tr>
-              <tr>
-                <td class="label-cell">SF (空间频率)</td>
-                <td class="value-cell">{{ metrics.SF.toFixed(4) }}</td>
-              </tr>
-              <tr>
-                <td class="label-cell">AG (平均梯度)</td>
-                <td class="value-cell">{{ metrics.AG.toFixed(4) }}</td>
-              </tr>
-              <tr>
-                <td class="label-cell">VIF (视觉信息保真度)</td>
-                <td class="value-cell">{{ metrics.VIF != null ? metrics.VIF.toFixed(4) : '--' }}</td>
-              </tr>
-              <tr>
-                <td class="label-cell">Qabf (边缘信息保持度)</td>
-                <td class="value-cell">{{ metrics.Qabf != null ? metrics.Qabf.toFixed(4) : '--' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-
-        <div class="chart-box">
-          <div class="chart-title">
-            <el-icon class="title-icon"><PieChart /></el-icon>
-            雷达图
-          </div>
-          <div ref="chartRef" class="radar-container"></div>
+    <div v-if="metrics" class="metrics-bar">
+      <div class="metrics-values">
+        <div class="metric-row" v-for="m in [
+          { label: 'EN', value: metrics.EN.toFixed(4) },
+          { label: 'SD', value: metrics.SD.toFixed(4) },
+          { label: 'SF', value: metrics.SF.toFixed(4) },
+          { label: 'AG', value: metrics.AG.toFixed(4) },
+          { label: 'VIF', value: metrics.VIF != null ? metrics.VIF.toFixed(4) : '--' },
+          { label: 'Qabf', value: metrics.Qabf != null ? metrics.Qabf.toFixed(4) : '--' },
+        ]" :key="m.label">
+          <span class="metric-label">{{ m.label }}</span>
+          <span class="metric-value">{{ m.value }}</span>
         </div>
       </div>
 
-      <div class="chart-box full-width">
-        <div class="chart-title">
-          <el-icon class="title-icon"><Histogram /></el-icon>
-          指标柱状图
-        </div>
-        <div ref="barChartRef" class="bar-container"></div>
+      <div class="chart-section">
+        <div ref="chartRef" class="radar-chart"></div>
+      </div>
+
+      <div class="chart-section flex-grow">
+        <div ref="barChartRef" class="bar-chart"></div>
       </div>
 
       <div class="perf-info">
         <span class="perf-item">
-          <el-icon class="perf-icon"><Timer /></el-icon>
-          <span class="perf-label">推理耗时</span>
-          <span class="perf-value">{{ fusionTime ? fusionTime + ' ms' : '--' }}</span>
+          <span class="perf-label">耗时</span>
+          <span class="perf-value">{{ fusionTime ? fusionTime + 'ms' : '--' }}</span>
         </span>
-        <span class="perf-divider"></span>
         <span class="perf-item">
-          <el-icon class="perf-icon"><Crop /></el-icon>
-          <span class="perf-label">图像尺寸</span>
-          <span class="perf-value">{{ imageWidth }} × {{ imageHeight }}</span>
+          <span class="perf-label">尺寸</span>
+          <span class="perf-value">{{ imageWidth }}×{{ imageHeight }}</span>
         </span>
       </div>
     </div>
@@ -207,131 +173,78 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
-.metrics-dashboard {
+.metrics-bar {
   display: flex;
-  flex-direction: row;
   align-items: stretch;
-  gap: var(--space-3);
-  padding: var(--space-3);
+  gap: 12px;
+  padding: 10px 14px;
   background: var(--color-glass);
   backdrop-filter: blur(12px);
-  -webkit-backdrop-filter: blur(12px);
   border: 1px solid var(--color-glass-border);
-  border-radius: var(--radius-lg);
+  border-radius: 12px;
   box-shadow: var(--shadow-glass);
-  transition: opacity 0.4s ease;
 }
 
-.metrics-grid {
+.metrics-values {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  min-width: 180px;
+  gap: 3px;
+  min-width: 130px;
   flex-shrink: 0;
 }
 
-.table-title,
-.chart-title {
+.metric-row {
   display: flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 12px;
-  font-weight: 600;
-  color: var(--color-text);
-  margin-bottom: var(--space-2);
+  justify-content: space-between;
+  font-size: 11px;
 }
 
-.title-icon {
-  font-size: 13px;
-  color: var(--color-primary);
-}
-
-.data-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-  background: var(--color-card);
-  border-radius: var(--radius-sm);
-  overflow: hidden;
-  border: 1px solid var(--color-border);
-}
-
-.data-table tr {
-  border-bottom: 1px solid var(--color-border);
-  transition: background 0.15s ease;
-}
-
-.data-table tr:last-child {
-  border-bottom: none;
-}
-
-.data-table tr:hover {
-  background: var(--color-bg-subtle);
-}
-
-.label-cell {
-  padding: 6px 10px;
+.metric-label {
   color: var(--color-text-secondary);
   font-weight: 500;
-  background: var(--color-bg);
-  width: 50%;
 }
 
-.value-cell {
-  padding: 6px 10px;
+.metric-value {
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--color-primary);
-  font-size: 12px;
+  font-size: 11px;
 }
 
-.chart-box {
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-lg);
-  padding: var(--space-3);
-  box-shadow: var(--shadow-xs);
-  min-width: 160px;
+.chart-section {
+  min-width: 140px;
   flex-shrink: 0;
 }
 
-.chart-box.full-width {
+.chart-section.flex-grow {
   flex: 1;
   min-width: 0;
 }
 
-.radar-container {
-  height: 180px;
+.radar-chart {
+  height: 140px;
   width: 100%;
 }
 
-.bar-container {
-  height: 150px;
+.bar-chart {
+  height: 140px;
   width: 100%;
 }
 
 .perf-info {
   display: flex;
-  align-items: center;
-  gap: var(--space-3);
-  padding: 8px 12px;
-  background: var(--color-card);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
-  font-size: 11px;
-  box-shadow: var(--shadow-xs);
-  align-self: center;
+  flex-direction: column;
+  justify-content: center;
+  gap: 6px;
+  min-width: 100px;
+  flex-shrink: 0;
 }
 
 .perf-item {
   display: flex;
-  align-items: center;
-  gap: var(--space-2);
-}
-
-.perf-icon {
-  font-size: 13px;
-  color: var(--color-text-tertiary);
+  align-items: baseline;
+  gap: 4px;
+  font-size: 10px;
 }
 
 .perf-label {
@@ -342,13 +255,6 @@ onBeforeUnmount(() => {
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--color-text);
-  font-size: 12px;
-}
-
-.perf-divider {
-  width: 1px;
-  height: 16px;
-  background: var(--color-border);
 }
 
 .slide-up-enter-active {
@@ -356,29 +262,30 @@ onBeforeUnmount(() => {
 }
 .slide-up-enter-from {
   opacity: 0;
-  transform: translateY(16px);
+  transform: translateY(8px);
 }
 
-/* Responsive: stack on small screens */
 @media (max-width: 1199px) {
-  .metrics-dashboard {
-    flex-direction: column;
+  .metrics-bar {
+    flex-wrap: wrap;
   }
-
-  .metrics-grid {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: var(--space-3);
-  }
-
-  .chart-box {
+  .chart-section {
     min-width: 0;
+    flex: 1;
   }
 }
 
 @media (max-width: 767px) {
-  .metrics-grid {
-    grid-template-columns: 1fr;
+  .metrics-bar {
+    flex-direction: column;
+  }
+  .metrics-values {
+    flex-direction: row;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .metric-row {
+    min-width: 80px;
   }
 }
 </style>

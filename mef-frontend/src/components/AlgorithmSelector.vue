@@ -34,39 +34,31 @@ const algorithms = [
 
 <style scoped>
 .algo-selector {
-  margin-bottom: var(--space-5);
+  margin-bottom: 0;
 }
 
 .algo-label {
-  display: block;
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  font-weight: 500;
-  margin-bottom: var(--space-3);
+  display: none;
 }
 
 .algo-options {
   display: flex;
-  flex-wrap: nowrap;
-  gap: var(--space-2);
+  flex-wrap: wrap;
+  gap: 6px;
   align-items: center;
 }
 
 .algo-chip {
-  padding: 8px 16px;
+  padding: 6px 12px;
   border: 1px solid var(--color-border);
-  border-radius: var(--radius-full);
+  border-radius: 999px;
   background: var(--color-card);
-  font-size: 13px;
+  font-size: 12px;
   color: var(--color-text-secondary);
   cursor: pointer;
-  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s ease;
   font-weight: 500;
-  box-shadow: var(--shadow-xs);
-  position: relative;
-  overflow: hidden;
   white-space: nowrap;
-  flex-shrink: 0;
 }
 
 .algo-chip:hover {

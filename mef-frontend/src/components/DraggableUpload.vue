@@ -38,11 +38,10 @@ onBeforeUnmount(() => {
 </script>
 
 <template>
-  <div class="upload-item">
-    <label class="upload-label">{{ label }}</label>
+  <div class="upload-item" :class="{ 'has-image': preview }">
     <div
       class="upload-box"
-      :class="{ 'is-dragging': isDragging, 'has-image': preview }"
+      :class="{ 'is-dragging': isDragging }"
       @drop.prevent="onDrop"
       @dragover.prevent="onDragOver"
       @dragleave.prevent="onDragLeave"
@@ -58,10 +57,10 @@ onBeforeUnmount(() => {
       <img v-if="preview" :src="preview" class="preview-img" />
       <Transition name="placeholder-fade" mode="out-in">
         <div v-if="!preview" class="upload-placeholder">
-          <el-icon class="upload-icon" :class="{ 'icon-bounce': isDragging }">
+          <el-icon class="upload-icon">
             <Upload />
           </el-icon>
-          <span class="upload-text">点击或拖拽上传</span>
+          <span class="upload-label-text">{{ label }}</span>
         </div>
       </Transition>
     </div>
@@ -70,59 +69,36 @@ onBeforeUnmount(() => {
 
 <style scoped>
 .upload-item {
-  flex: 1;
-  min-width: 0;
-}
-
-.upload-label {
-  display: block;
-  margin-bottom: var(--space-2);
-  font-size: 13px;
-  color: var(--color-text-secondary);
-  font-weight: 500;
+  width: 160px;
+  flex-shrink: 0;
 }
 
 .upload-box {
   position: relative;
   width: 100%;
-  aspect-ratio: 4 / 3;
+  height: 100%;
+  min-height: 80px;
   border: 2px dashed var(--color-border);
-  border-radius: var(--radius-md);
+  border-radius: 8px;
   cursor: pointer;
   overflow: hidden;
-  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  transition: all 0.2s ease;
   background: var(--color-card);
-  box-shadow: var(--shadow-xs);
 }
 
 .upload-box:hover {
-  border-color: var(--color-border-hover);
-  background: var(--color-primary-light);
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
-}
-
-.upload-box:active {
-  transform: translateY(0);
-  box-shadow: var(--shadow-xs);
+  border-color: var(--color-primary);
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.1);
 }
 
 .upload-box.is-dragging {
   border-color: var(--color-primary);
   background: var(--color-primary-light);
-  box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
-  transform: scale(1.01);
 }
 
-.upload-box.has-image {
+.upload-item.has-image .upload-box {
   border-style: solid;
-  border-color: var(--color-border);
-  box-shadow: var(--shadow-sm);
-}
-
-.upload-box.has-image:hover {
-  box-shadow: var(--shadow-md);
-  transform: translateY(-1px);
+  border-width: 1px;
 }
 
 .file-input {
@@ -131,19 +107,18 @@ onBeforeUnmount(() => {
 
 .upload-placeholder {
   height: 100%;
+  min-height: 80px;
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  gap: var(--space-2);
-  color: var(--color-text-secondary);
-  transition: all 0.2s ease;
+  gap: 4px;
+  color: var(--color-text-tertiary);
 }
 
 .upload-icon {
-  font-size: 24px;
-  color: var(--color-text-tertiary);
-  transition: all 0.25s ease;
+  font-size: 20px;
+  transition: all 0.2s ease;
 }
 
 .upload-box:hover .upload-icon {
@@ -151,35 +126,16 @@ onBeforeUnmount(() => {
   transform: scale(1.1);
 }
 
-.upload-box.is-dragging .upload-icon {
-  color: var(--color-primary);
-  transform: scale(1.2);
-}
-
-.icon-bounce {
-  animation: icon-bounce 0.5s ease;
-}
-
-@keyframes icon-bounce {
-  0%, 100% { transform: scale(1); }
-  50% { transform: scale(1.3); }
-}
-
-.upload-text {
-  font-size: 12px;
+.upload-label-text {
+  font-size: 11px;
   font-weight: 500;
 }
 
 .preview-img {
   width: 100%;
   height: 100%;
-  object-fit: cover;
+  object-fit: contain;
   display: block;
-  transition: transform 0.3s ease;
-}
-
-.upload-box.has-image:hover .preview-img {
-  transform: scale(1.02);
 }
 
 .placeholder-fade-enter-active {
