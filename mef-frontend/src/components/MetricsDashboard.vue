@@ -211,8 +211,8 @@ onBeforeUnmount(() => {
   display: flex;
   flex-direction: row;
   align-items: stretch;
-  gap: var(--space-4);
-  padding: var(--space-4);
+  gap: var(--space-3);
+  padding: var(--space-3);
   background: var(--color-glass);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -225,8 +225,8 @@ onBeforeUnmount(() => {
 .metrics-grid {
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
-  min-width: 220px;
+  gap: var(--space-3);
+  min-width: 180px;
   flex-shrink: 0;
 }
 
@@ -234,22 +234,22 @@ onBeforeUnmount(() => {
 .chart-title {
   display: flex;
   align-items: center;
-  gap: 6px;
-  font-size: 13px;
+  gap: 4px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--color-text);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-2);
 }
 
 .title-icon {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-primary);
 }
 
 .data-table {
   width: 100%;
   border-collapse: collapse;
-  font-size: 13px;
+  font-size: 12px;
   background: var(--color-card);
   border-radius: var(--radius-sm);
   overflow: hidden;
@@ -270,7 +270,7 @@ onBeforeUnmount(() => {
 }
 
 .label-cell {
-  padding: var(--space-3) var(--space-4);
+  padding: 6px 10px;
   color: var(--color-text-secondary);
   font-weight: 500;
   background: var(--color-bg);
@@ -278,20 +278,20 @@ onBeforeUnmount(() => {
 }
 
 .value-cell {
-  padding: var(--space-3) var(--space-4);
+  padding: 6px 10px;
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--color-primary);
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .chart-box {
   background: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-lg);
-  padding: var(--space-4);
+  padding: var(--space-3);
   box-shadow: var(--shadow-xs);
-  min-width: 220px;
+  min-width: 160px;
   flex-shrink: 0;
 }
 
@@ -301,25 +301,26 @@ onBeforeUnmount(() => {
 }
 
 .radar-container {
-  height: 220px;
+  height: 180px;
   width: 100%;
 }
 
 .bar-container {
-  height: 180px;
+  height: 150px;
   width: 100%;
 }
 
 .perf-info {
   display: flex;
   align-items: center;
-  gap: var(--space-4);
-  padding: var(--space-3) var(--space-4);
+  gap: var(--space-3);
+  padding: 8px 12px;
   background: var(--color-card);
   border: 1px solid var(--color-border);
   border-radius: var(--radius-md);
-  font-size: 12px;
+  font-size: 11px;
   box-shadow: var(--shadow-xs);
+  align-self: center;
 }
 
 .perf-item {
@@ -329,7 +330,7 @@ onBeforeUnmount(() => {
 }
 
 .perf-icon {
-  font-size: 14px;
+  font-size: 13px;
   color: var(--color-text-tertiary);
 }
 
@@ -341,6 +342,7 @@ onBeforeUnmount(() => {
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--color-text);
+  font-size: 12px;
 }
 
 .perf-divider {
@@ -366,7 +368,7 @@ onBeforeUnmount(() => {
   .metrics-grid {
     display: grid;
     grid-template-columns: 1fr 1fr;
-    gap: var(--space-4);
+    gap: var(--space-3);
   }
 
   .chart-box {

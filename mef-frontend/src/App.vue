@@ -122,7 +122,7 @@ onBeforeUnmount(clearPreviews)
 
 .app-main {
   flex: 1;
-  padding: var(--space-5);
+  padding: var(--space-4);
   display: flex;
   justify-content: center;
 }
@@ -132,15 +132,15 @@ onBeforeUnmount(clearPreviews)
   max-width: 1400px;
   display: flex;
   flex-direction: column;
-  gap: var(--space-4);
+  gap: var(--space-3);
 }
 
 /* ===== Row 1: Input Row ===== */
 .input-row {
   display: flex;
-  align-items: flex-start;
-  gap: var(--space-4);
-  padding: var(--space-4);
+  align-items: center;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
   background: var(--color-glass);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -151,9 +151,9 @@ onBeforeUnmount(clearPreviews)
 
 .upload-group {
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-2);
   flex-shrink: 0;
-  width: 420px;
+  width: 340px;
 }
 
 .algo-section {
@@ -163,9 +163,9 @@ onBeforeUnmount(clearPreviews)
 
 .fuse-button {
   flex-shrink: 0;
-  width: 160px;
-  height: 44px;
-  font-size: 14px;
+  width: 140px;
+  height: 40px;
+  font-size: 13px;
   font-weight: 600;
   border-radius: var(--radius-md);
   background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
@@ -195,15 +195,16 @@ onBeforeUnmount(clearPreviews)
 /* ===== Row 2: Display Row ===== */
 .display-row {
   display: grid;
-  grid-template-columns: 1fr 2fr;
-  gap: var(--space-4);
+  grid-template-columns: 2fr 3fr;
+  gap: var(--space-3);
+  min-height: 380px;
 }
 
 .source-panel {
   display: flex;
   flex-direction: column;
-  gap: var(--space-3);
-  padding: var(--space-4);
+  gap: var(--space-2);
+  padding: var(--space-3);
   background: var(--color-glass);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
@@ -219,7 +220,7 @@ onBeforeUnmount(clearPreviews)
 }
 
 .panel-title {
-  font-size: 14px;
+  font-size: 13px;
   font-weight: 700;
   color: var(--color-text);
   letter-spacing: 0.3px;
@@ -231,8 +232,8 @@ onBeforeUnmount(clearPreviews)
 }
 
 .source-tag {
-  font-size: 11px;
-  padding: 2px 8px;
+  font-size: 10px;
+  padding: 2px 6px;
   border-radius: var(--radius-full);
   background: var(--color-bg-subtle);
   color: var(--color-text-secondary);
@@ -241,7 +242,7 @@ onBeforeUnmount(clearPreviews)
 
 .source-images {
   display: flex;
-  gap: var(--space-3);
+  gap: var(--space-2);
   flex: 1;
   min-height: 0;
 }
@@ -272,7 +273,7 @@ onBeforeUnmount(clearPreviews)
   align-items: center;
   gap: var(--space-2);
   color: var(--color-text-tertiary);
-  font-size: 12px;
+  font-size: 11px;
 }
 
 .result-panel {

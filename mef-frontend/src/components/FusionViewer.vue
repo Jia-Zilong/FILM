@@ -119,12 +119,12 @@ const sliderValue = ref(50)
 .source-preview-row {
   display: flex;
   gap: var(--space-2);
-  margin-bottom: var(--space-3);
+  margin-bottom: var(--space-2);
+  height: 80px;
 }
 
 .source-thumb {
   flex: 1;
-  aspect-ratio: 4 / 3;
   border-radius: var(--radius-sm);
   overflow: hidden;
   display: flex;
