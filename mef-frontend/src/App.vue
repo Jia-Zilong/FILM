@@ -164,7 +164,9 @@ onBeforeUnmount(clearPreviews)
   display: grid;
   grid-template-columns: 1fr 1fr 2fr;
   gap: 12px;
-  min-height: 340px;
+  height: calc(100vh - 200px);
+  min-height: 300px;
+  max-height: 800px;
 }
 
 .source-col {
@@ -199,9 +201,9 @@ onBeforeUnmount(clearPreviews)
 }
 
 .img-container img {
-  max-width: 100%;
-  max-height: 100%;
-  object-fit: contain;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .result-col {
