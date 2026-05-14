@@ -1,0 +1,264 @@
+\section{相关理论和技术概述}\label{ch:theory}
+
+\subsection{引言}\label{sec:ch2_intro}
+
+本章作为全文研究的理论基础部分，主要围绕基于视觉语言模型的多曝光图像融合方法所涉及的关键理论与技术展开阐述。该部分承接第一章中对研究背景、现有方法局限及研究内容的分析，进一步明确本文方法设计所依赖的深度学习模型、跨模态学习机制和多曝光图像处理基础，并为第三章FILM图像融合方法的结构设计、模块实现与实验评价提供理论支撑。本章首先介绍深度学习图像融合的基本原理，重点说明卷积神经网络、Transformer及Restormer架构在视觉特征建模中的作用；接着阐述视觉语言模型、跨注意力机制和多模态特征对齐方法，为文本语义引导图像融合提供技术依据；最后分析多曝光图像融合任务的特点、YCbCr色彩空间处理策略以及融合质量评价指标体系，为后续方法构建和实验验证奠定基础。
+
+\subsection{深度学习图像融合基础}\label{sec:dl_foundation}
+
+\textbf{（1）卷积神经网络与图像特征提取。}
+
+卷积神经网络（Convolutional Neural Network, CNN）是深度学习的核心架构之一，因其能够有效捕捉图像的局部空间相关性而在计算机视觉领域得到广泛应用。CNN的基本组成包括卷积层、池化层和激活函数。
+
+卷积层通过滑动窗口操作在输入特征图上执行卷积运算，提取不同层次的视觉特征。设输入特征图为$X \in \mathbb{R}^{C_{in} \times H \times W}$，卷积核为$K \in \mathbb{R}^{C_{in} \times C_{out} \times k \times k}$，则卷积运算可表示为：
+\begin{equation}
+    Y_{c,i,j} = \sum_{c'=1}^{C_{in}} \sum_{m=1}^{k} \sum_{n=1}^{k} K_{c,c',m,n} \cdot X_{c',i+m-1,j+n-1}
+\end{equation}
+其中，$C_{in}$和$C_{out}$分别表示输入和输出通道数，$k$为卷积核大小。通过多层卷积的堆叠，网络可以学习到从低级边缘特征到高级语义特征的分层表示。
+
+池化层用于降低特征图的空间维度，减少计算量并增强特征的平移不变性。常用的池化操作包括最大池化（Max Pooling）和平均池化（Average Pooling）。
+
+激活函数为网络引入非线性映射能力。常用的激活函数包括ReLU（Rectified Linear Unit）、PReLU（Parametric ReLU）等。其中，$\alpha$为可学习的参数，提高了模型的表达能力：
+\begin{equation}
+    f(x) = \begin{cases}
+        x, & x > 0 \\
+        \alpha x, & x \leq 0
+    \end{cases}
+\end{equation}
+
+在图像融合领域，CNN被广泛用于特征提取和融合决策。典型的CNN融合架构包括编码器-解码器（Encoder-Decoder）结构和密集连接（Dense Connection）结构。编码器负责将源图像编码为紧凑的特征表示，解码器则将融合后的特征重建为目标融合图像。
+
+\textbf{（2）Transformer与自注意力机制。}
+
+Transformer架构最初由Vaswani等\supercite{vaswani2017attention}在机器翻译任务中提出，其核心是自注意力机制（Self-Attention Mechanism），能够捕捉输入序列中任意两个位置之间的依赖关系，不受距离限制。
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=0.65\textwidth]{img/fig2_1_attention.png}
+    \caption{Transformer自注意力机制示意图\supercite{vaswani2017attention}}
+    \label{fig:attention}
+\end{figure}
+
+自注意力机制通过计算查询（Query）、键（Key）和值（Value）之间的注意力权重来实现信息的动态聚合。给定输入序列$X \in \mathbb{R}^{N \times D}$，其中$N$为序列长度，$D$为特征维度，自注意力的计算过程如下：
+
+首先通过线性变换生成Q、K、V矩阵：
+\begin{equation}
+    Q = XW_Q, \quad K = XW_K, \quad V = XW_V
+\end{equation}
+其中$W_Q, W_K, V_V \in \mathbb{R}^{D \times D}$为可学习的权重矩阵。然后计算注意力权重并应用于值矩阵：
+\begin{equation}
+    \text{Attention}(Q, K, V) = \text{softmax}\left(\frac{QK^T}{\sqrt{d_k}}\right)V
+\end{equation}
+其中$d_k$为缩放因子，用于防止点积结果过大导致梯度消失。
+
+多头注意力（Multi-Head Attention）将输入特征划分为多个子空间，在每个子空间中独立执行注意力计算，然后将结果拼接并进行线性变换，增强了模型对不同维度特征的捕获能力：
+\begin{equation}
+    \text{MultiHead}(Q, K, V) = \text{Concat}(\text{head}_1, ..., \text{head}_h)W_O
+\end{equation}
+\begin{equation}
+    \text{head}_i = \text{Attention}(QW_Q^i, KW_K^i, VW_V^i)
+\end{equation}
+
+在图像处理领域，Vision Transformer（ViT）\supercite{dosovitskiy2021vit}将图像划分为固定大小的图像块（Patch），将其展平为序列后输入Transformer编码器进行处理。这一方法打破了CNN的局部感受野限制，实现了全局特征的建模。
+
+\textbf{（3）Restormer架构及其在低级视觉任务中的应用。}
+
+Restormer\supercite{zamir2022restormer}是一种专为图像处理任务设计的Transformer变体，其核心贡献是提出了多Dconv头转置自注意力机制（Multi-DConv-Head Transposed Self-Attention, MDTA）。与标准Transformer在特征维度上计算注意力不同，MDTA在空间维度上计算注意力，同时通过深度卷积（Depth-wise Convolution）实现跨通道的信息交互。
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=0.75\textwidth]{img/fig2_2_restormer.png}
+    \caption{Restormer Transformer块结构\supercite{zamir2022restormer}}
+    \label{fig:restormer}
+\end{figure}
+
+如\cref{fig:restormer}所示，Restormer的Transformer块由两个主要子模块组成：
+
+（1）\textbf{多Dconv头转置自注意力（MDTA）}：首先对输入特征进行层归一化（Layer Normalization），然后通过1$\times$1卷积生成Q、K、V，对K和V应用3$\times$3深度卷积以捕捉局部空间信息，最后在通道维度上计算转置自注意力。这种设计使得Restormer能够高效处理高分辨率图像。
+
+（2）\textbf{门控前馈网络（Gated-Dconv Feed-Forward Network, GDFN）}：在标准前馈网络的基础上引入门控机制，通过两个并行的3$\times$3深度卷积分支提取不同层次的特征，然后逐元素相乘进行门控融合，增强了非线性表达能力。
+
+Restormer块的前向传播可表示为：
+\begin{equation}
+    \hat{X} = \text{MDTA}(\text{LN}(X)) + X
+\end{equation}
+\begin{equation}
+    X' = \text{GDFN}(\text{LN}(\hat{X})) + \hat{X}
+\end{equation}
+其中LN表示层归一化操作，残差连接确保了梯度的有效传播。
+
+Restormer在使模型在捕获全局上下文的同时保留局部空间细节，适用于高分辨率图像的特征提取，其高效的注意力计算方式和强大的特征建模能力使其成为图像融合任务的理想选择。
+
+\subsection{视觉语言模型与跨模态学习}\label{sec:vlm}
+
+\textbf{（1）视觉语言模型概述。}
+
+视觉语言模型（Vision-Language Model, VLM）是一类能够同时理解和处理视觉与文本信息的深度学习模型。通过在大规模图像-文本对数据集上进行预训练，VLM学会了将视觉和语言两种模态的信息映射到共享的语义空间，从而实现跨模态的理解和推理。
+
+视觉语言模型的发展经历了以下几个重要阶段：
+
+（1）\textbf{对比学习预训练阶段}：CLIP模型\supercite{radford2021clip}通过在约4亿个图像-文本对上执行对比学习，学会了将图像和文本映射到1024维的共享嵌入空间。在对比学习中，匹配的图像-文本对的嵌入向量被拉近，而不匹配的则被推远。训练完成后，CLIP可以实现零样本（Zero-shot）图像分类，其泛化能力显著超越了传统的监督学习方法。
+
+（2）\textbf{视觉问答与描述生成阶段}：BLIP模型统一了视觉语言理解和生成任务，通过引入图像-文本匹配（Image-Text Matching）、图像描述生成（Image Captioning）和视觉问答（Visual Question Answering）三个预训练目标，在多种下游任务中取得了优异的性能。
+
+（3）\textbf{大语言模型集成阶段}：BLIP2\supercite{li2023blip2}通过引入Q-Former模块，巧妙地将预训练的冻结视觉编码器与冻结的大语言模型连接起来。如\cref{fig:blip2_framework}所示，BLIP2的预训练分为两个阶段，通过轻量级的桥接模块实现视觉-语言的高效对齐，避免了从头训练整个多模态模型的巨大计算成本。
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=0.7\textwidth]{img/fig2_3_blip2_framework.png}
+    \caption{BLIP2两阶段预训练框架\supercite{li2023blip2}}
+    \label{fig:blip2_framework}
+\end{figure}
+
+BLIP2的核心架构由三个组件构成：（a）\textbf{冻结的图像编码器}（Image Encoder）：采用预训练的ViT或CLIP等视觉模型提取图像特征，在训练过程中参数保持冻结；（b）\textbf{Q-Former}（Querying Transformer）：唯一可训练的轻量级Transformer模块，通过一组可学习的Query tokens作为信息瓶颈，从视觉特征中选择性地提取与文本相关的语义信息；（c）\textbf{冻结的大语言模型}（LLM）：采用OPT或FlanT5等预训练语言模型，负责接收Q-Former的输出并生成文本。
+
+BLIP2的预训练过程分为两个阶段：
+
+\textbf{阶段一（左侧）：视觉-语言表征学习}。在此阶段，图像编码器和文本编码器均保持冻结，仅训练Q-Former模块。Q-Former通过自注意力机制使Query tokens之间相互交互，同时通过交叉注意力机制从冻结的图像编码器提取的视觉特征中选择性地提取相关信息。该阶段采用三种损失函数进行联合优化：图像-文本对比学习损失（ITC）用于拉近匹配的图文对、推远不匹配的图文对；图像-文本匹配损失（ITM）用于细粒度的图文对齐判别；图像-文本生成损失（ITG）用于以图像为条件生成文本描述。
+
+\textbf{阶段二（右侧）：视觉到语言生成学习}。在此阶段，将阶段一训练好的Q-Former输出的Query embeddings通过线性投影层作为软提示（Soft Prompts）输入到冻结的大语言模型中，使用标准的因果语言建模损失进行训练，使LLM能够理解视觉输入并生成文本。
+
+BLIP2在保持大语言模型强大语言能力的同时，避免了对其参数的微调，显著降低了计算成本。BLIP2提取的文本特征具有高度的语义描述能力，可以被用于指导下游的视觉任务。如\cref{fig:blip2_qformer}所示，Q-Former通过三种不同的注意力掩码模式来适配不同的预训练任务。
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=0.85\textwidth]{img/fig2_4_blip2_qformer.png}
+    \caption{Q-Former内部结构与注意力掩码机制\supercite{li2023blip2}}
+    \label{fig:blip2_qformer}
+\end{figure}
+
+Q-Former接收两类输入：一类是从冻结的图像编码器获得的视觉patch特征序列，另一类是一组固定数量（通常为32个）的可学习Query tokens。如\cref{fig:blip2_qformer}右侧所示，Q-Former设计了三种注意力掩码模式：（a）\textbf{双向自注意力掩码}：所有Query tokens和文本tokens均可相互关注，用于图像-文本匹配任务；（b）\textbf{多模态因果自注意力掩码}：Query tokens可以关注自身和文本tokens，但文本tokens只能关注自身（遵循因果语言模型的上三角掩码），用于图像引导的文本生成任务；（c）\textbf{单模态自注意力掩码}：Query tokens之间可以相互关注，但文本tokens之间互不可见，用于图像-文本对比学习任务，使Query tokens能够提取纯粹的视觉语义信息而不受文本干扰。
+
+通过这三种掩码模式的组合，Q-Former能够在同一架构下完成对比学习、匹配判别和文本生成三种任务，实现视觉特征与语言特征的有效对齐。
+
+\textbf{（2）跨注意力机制。}
+
+跨注意力（Cross-Attention）是多模态学习中的核心机制之一，用于在两种不同模态之间建立信息交互。与自注意力在同一模态内部建立关联不同，跨注意力在不同模态之间建立关联，实现一种模态对另一种模态的信息引导。
+
+在视觉语言模型中，跨注意力的典型计算方式如下：
+
+（1）\textbf{查询来源}：查询向量（Query）来自一种模态（如文本特征），表示"需要查询什么信息"。
+
+（2）\textbf{键值来源}：键（Key）和值（Value）来自另一种模态（如视觉特征），表示"可查询的信息在哪里"和"查询到的信息是什么"。
+
+（3）\textbf{注意力计算}：使用与自注意力相同的缩放点积公式，但Q、K、V来自不同的模态源，如\cref{fig:scaled_dot}所示：
+\begin{equation}
+    \text{CrossAttention}(Q_{text}, K_{vision}, V_{vision}) = \text{softmax}\left(\frac{Q_{text}K_{vision}^T}{\sqrt{d_k}}\right)V_{vision}
+\end{equation}
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=0.45\textwidth]{img/fig2_5_scaled_dot.png}
+    \caption{缩放点积注意力计算流程\supercite{vaswani2017attention}}
+    \label{fig:scaled_dot}
+\end{figure}
+
+跨注意力机制的优势在于：
+
+（1）\textbf{选择性信息提取}：文本查询可以有选择地从视觉特征中提取相关信息，过滤掉不相关的视觉噪声。
+
+（2）\textbf{语义引导}：文本语义为视觉特征处理提供了高层指导方向，使视觉特征的处理更加聚焦于语义重要的区域。
+
+（3）\textbf{可解释性}：注意力权重反映了文本与视觉特征之间的对应关系，具有一定的可解释性。
+
+在本文采用的FILM流程中，预训练完成的BLIP2（冻结参数）将ChatGPT生成的文本信息映射到和图像相同的语义空间，通过跨注意力机制实现文本语义对视觉特征的引导融合，通过以文本特征作为查询、图像特征作为键和值，使得文本语义信息能够有效地指导视觉特征的选择和重组。
+
+\textbf{（3）多模态特征对齐方法。}
+
+多模态特征对齐是视觉语言模型中的关键技术，其目标是将不同模态的特征映射到兼容的表示空间，使得跨模态的信息交互成为可能。
+
+常见的多模态特征对齐方法包括：
+
+（1）\textbf{投影对齐（Projection Alignment）}：通过线性变换或非线性映射将一种模态的特征投影到另一种模态的特征空间。例如，将视觉特征通过全连接层投影到与文本特征相同维度的空间。
+
+（2）\textbf{对比对齐（Contrastive Alignment）}：利用对比学习损失函数，拉近匹配的跨模态特征对、推远不匹配的特征对。CLIP采用的便是这种策略。
+
+（3）\textbf{注意力对齐（Attention-based Alignment）}：通过跨注意力机制动态地建立跨模态的软对齐关系，无需显式的空间映射。
+
+（4）\textbf{插值对齐（Interpolation Alignment）}：通过空间插值操作调整特征图的空间分辨率，使不同模态的特征在空间维度上对齐。
+
+在FILM方法中，采用了投影对齐和插值对齐相结合的策略：首先通过1$\times$1卷积将视觉特征投影到文本特征空间，然后通过最近邻插值将特征图的空间分辨率统一为288$\times$384，确保视觉特征与文本特征在维度和空间尺度上完全对齐。
+
+\subsection{多曝光图像融合任务}\label{sec:mef_foundation}
+
+\textbf{（1）多曝光图像的特点与YCbCr色彩空间。}
+
+多曝光图像融合是指将同一场景在不同曝光条件下拍摄的多幅图像合成为一幅包含完整场景细节的高质量图像的技术。由于相机传感器的动态范围有限，单次曝光往往无法同时捕获场景中的高亮区域和暗部区域的细节信息。
+
+多曝光图像具有以下特点：
+
+（1）\textbf{互补性}：不同曝光级别的图像在信息内容上具有互补性。欠曝光图像保留了高亮区域的细节，但暗部区域信息不足；过曝光图像则恰好相反，暗部区域细节丰富，但高亮区域出现饱和。例如，拍摄一扇明亮的窗户和室内暗角，欠曝照片中窗户上的窗外风景纹理清晰，室内几乎全黑，过曝照片则室内桌子的纹理可见，但窗户区域一片白（饱和）。
+
+（2）\textbf{空间对齐性}：由于多幅图像拍摄的是同一场景，在理想情况下各图像之间具有严格的空间对应关系。
+
+（3）\textbf{色彩一致性}：多曝光图像的色度信息（Cb、Cr通道）在不同曝光级别之间变化较小，而亮度信息（Y通道）则存在显著差异。因此，在多曝光融合中，通常只对亮度通道进行融合处理，色度通道采用简单的加权平均。这也是后续使用YCbCr色彩空间分解的依据。
+
+（4）\textbf{非线性响应}：相机传感器的光电转换特性是非线性的，导致不同曝光级别下相同场景区域的像素值之间存在非线性关系。例如，如果相机是线性的（理想情况），2 秒曝光得到的像素值应该是 1 秒曝光的 2 倍，实际相机：1 秒曝光 → 像素值 100，2 秒曝光 → 像素值 180（并非 200）。
+
+YCbCr色彩空间将彩色图像分解为一个亮度分量（Y）和两个色度分量（Cb、Cr），这种分解方式与人眼视觉系统对亮度敏感、对色度相对不敏感的特性相符。RGB到YCbCr的转换公式为：
+\begin{equation}
+    \begin{bmatrix} Y \\ Cb \\ Cr \end{bmatrix} = \begin{bmatrix} 0.299 & 0.587 & 0.114 \\ -0.169 & -0.331 & 0.500 \\ 0.500 & -0.419 & -0.081 \end{bmatrix} \begin{bmatrix} R \\ G \\ B \end{bmatrix} + \begin{bmatrix} 0 \\ 128 \\ 128 \end{bmatrix}
+\end{equation}
+
+在多曝光图像融合中采用YCbCr色彩空间的优势在于：
+
+（1）\textbf{信息分离}：亮度通道承载了图像的主要结构和细节信息，而色度通道主要包含颜色信息。多曝光图像之间的差异主要体现在亮度通道上，因此只需对亮度通道进行融合处理。
+
+（2）\textbf{计算效率}：仅对单一亮度通道进行深度学习融合处理，显著降低了计算量和内存消耗。
+
+（3）\textbf{色彩保真}：色度通道采用等权重的经典加权平均融合策略，可以较好地保持原始图像的颜色信息，避免融合过程中出现色彩失真。
+
+本文采用的FILM流程遵循这一处理策略：首先将RGB源图像转换到YCbCr色彩空间，提取Y通道输入到FILM网络进行融合推理，获得融合后的亮度通道；Cb和Cr通道采用0.5权重的加权平均进行融合；最后将融合后的Y、Cb、Cr通道合并，转换回RGB色彩空间输出结果。
+
+\textbf{（2）融合质量评价指标。}\label{sec:metrics}
+
+多曝光图像融合质量的评估分为客观评价和主观评价两种方式。本文主要关注客观评价指标。
+
+\textbf{（1）信息熵（Entropy, EN）}
+
+信息熵衡量融合图像包含的信息量，基于图像灰度分布的概率统计计算：
+\begin{equation}
+    EN = -\sum_{l=0}^{L-1} p(l) \log_2 p(l)
+\end{equation}
+其中$L$为灰度级数（通常为256），$p(l)$为灰度级$l$出现的概率。信息熵越大，表示融合图像包含的信息越丰富。
+
+\textbf{（2）标准差（Standard Deviation, SD）}
+
+标准差反映了融合图像的对比度和灰度分布的离散程度：
+\begin{equation}
+    SD = \sqrt{\frac{1}{MN}\sum_{i=1}^{M}\sum_{j=1}^{N}(f(i,j) - \bar{f})^2}
+\end{equation}
+其中$f(i,j)$为像素值，$\bar{f}$为图像均值，$M$和$N$为图像的高和宽。标准差越大，表示图像的对比度越高。
+
+\textbf{（3）空间频率（Spatial Frequency, SF）}
+
+空间频率衡量融合图像在空间域中的总体活跃度，反映了图像的细节丰富程度：
+\begin{equation}
+    SF = \sqrt{RF^2 + CF^2}
+\end{equation}
+其中行频率$RF$和列频率$CF$分别反映了图像在行和列方向上的像素变化率。
+
+\textbf{（4）平均梯度（Average Gradient, AG）}
+
+平均梯度反映了融合图像的清晰度和纹理细节，通过计算图像在水平和垂直方向的梯度均值得到。
+
+\textbf{（5）视觉信息保真度（Visual Information Fidelity, VIF）}
+
+VIF基于自然场景统计模型和小波分析，衡量融合图像从源图像中保留的视觉信息量。该方法在自然场景统计模型的基础上，考虑了人类视觉系统的特性，能够更准确地反映人眼对融合质量的主观感知。
+
+\textbf{（6）边缘信息保持度（Qabf）}
+
+Qabf衡量融合图像从源图像中保留的边缘信息量，通过计算源图像与融合图像之间的边缘传递率来评估融合质量。
+
+本文在实验验证阶段综合采用上述六种评价指标，从信息量、对比度、清晰度、视觉保真度和边缘保留等多个维度对融合结果进行全面评估。各评价指标的对比效果如\cref{fig:metrics}所示，可以看见FILM算法在六个指标上都优于传统算法。
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=0.95\textwidth]{img/fig2_6_metrics_comparison.png}
+    \caption{不同融合方法在六项评价指标上的对比}
+    \label{fig:metrics}
+\end{figure}
+
+\subsection{本章小结}\label{sec:ch2_summary}
+
+本章系统地介绍了与本文研究内容相关的理论基础和技术背景。首先介绍了卷积神经网络、Transformer架构和Restormer等深度学习方法在图像融合中的应用基础；然后阐述了视觉语言模型的基本原理如BLIP2、跨注意力机制和多模态特征对齐方法；接着介绍了多曝光图像的特点、YCbCr色彩空间处理方法和融合质量评价指标体系。这些理论和方法构成了本文复现与适配FILM图像融合方法的技术基础，在下一章中将对其进行详细的阐述和应用分析。

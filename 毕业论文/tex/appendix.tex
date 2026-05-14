@@ -1,0 +1,125 @@
+\begin{appendix}
+\section*{附录A FILM网络核心代码}
+
+本附录提供了FILM网络模型的核心实现代码，便于读者理解和复现本文所采用的方法。
+
+\subsection*{A.1 跨注意力融合块（restormer\_cablock）}
+
+\begin{lstlisting}[language=Python]
+class restormer_cablock(nn.Module):
+    def __init__(self, input_channel=1, restormerdim=32,
+                 restormerhead=8, image2text_dim=10,
+                 ffn_expansion_factor=4, bias=False,
+                 LayerNorm_type='WithBias', hidden_dim=768,
+                 pooling='avg', normalization='l1'):
+        super().__init__()
+        self.convA1 = nn.Conv2d(input_channel, restormerdim,
+                                kernel_size=3, stride=1, padding=1)
+        self.preluA1 = nn.PReLU()
+        self.convA2 = nn.Conv2d(image2text_dim, restormerdim, kernel_size=1)
+        self.preluA2 = nn.PReLU()
+        self.convA3 = nn.Conv2d(2 * restormerdim, restormerdim, kernel_size=1)
+        self.preluA3 = nn.PReLU()
+        # 图像B分支（对称结构）...
+        self.restormerA1 = Restormer(restormerdim, restormerhead,
+                                     ffn_expansion_factor, bias, LayerNorm_type)
+        self.cross_attentionA1 = CrossAttention(embed_dim=hidden_dim, num_heads=8)
+        self.imagef2textfA1 = imagefeature2textfeature(restormerdim, image2text_dim, hidden_dim)
+
+    def forward(self, imageA, imageB, text):
+        # Restormer特征提取
+        imageA = self.restormerA1(self.preluA1(self.convA1(imageA)))
+        imageAtotext = self.imagef2textfA1(imageA)
+        # 跨注意力计算
+        ca_A = self.cross_attentionA1(text, imageAtotext, imageAtotext)
+        # 注意力池化与归一化
+        ca_A = F.adaptive_avg_pool1d(ca_A.permute(0, 2, 1), 1).permute(0, 2, 1)
+        ca_A = F.normalize(ca_A, p=1, dim=2)
+        # 特征重构与融合
+        ca_A = (imageAtotext * ca_A).view(b, self.image2text_dim, 288, 384)
+        ca_A = F.interpolate(ca_A, [H, W], mode='nearest')
+        ca_A = self.preluA3(self.convA3(torch.cat(
+            (F.interpolate(imageA, [H, W]),
+             self.preluA2(self.convA2(ca_A)) + imageA_sideout), 1)))
+        return ca_A, ca_B
+\end{lstlisting}
+
+\subsection*{A.2 FILM主网络（Net）}
+
+\begin{lstlisting}[language=Python]
+class Net(nn.Module):
+    def __init__(self, mid_channel=32, decoder_num_heads=8,
+                 ffn_factor=4, bias=False,
+                 LayerNorm_type='WithBias', out_channel=1,
+                 hidden_dim=256, image2text_dim=32):
+        super().__init__()
+        self.text_process = text_preprocess(768, hidden_dim)
+        self.restormerca1 = restormer_cablock(hidden_dim=hidden_dim,
+                                               image2text_dim=image2text_dim)
+        self.restormerca2 = restormer_cablock(input_channel=mid_channel,
+                                               hidden_dim=hidden_dim,
+                                               image2text_dim=image2text_dim)
+        self.restormerca3 = restormer_cablock(input_channel=mid_channel,
+                                               hidden_dim=hidden_dim,
+                                               image2text_dim=image2text_dim)
+        self.restormer1 = Restormer(2 * mid_channel, decoder_num_heads,
+                                    ffn_factor, bias, LayerNorm_type)
+        self.restormer2 = Restormer(mid_channel, decoder_num_heads,
+                                    ffn_factor, bias, LayerNorm_type)
+        self.restormer3 = Restormer(mid_channel, decoder_num_heads,
+                                    ffn_factor, bias, LayerNorm_type)
+        self.conv1 = nn.Conv2d(2 * mid_channel, mid_channel, kernel_size=1)
+        self.conv2 = nn.Conv2d(mid_channel, out_channel, kernel_size=1)
+        self.softmax = nn.Sigmoid()
+
+    def forward(self, imageA, imageB, text):
+        text = self.text_process(text)
+        featureA, featureB = self.restormerca1(imageA, imageB, text)
+        featureA, featureB = self.restormerca2(featureA, featureB, text)
+        featureA, featureB = self.restormerca3(featureA, featureB, text)
+        fusionfeature = torch.cat((featureA, featureB), 1)
+        fusionfeature = self.restormer1(fusionfeature)
+        fusionfeature = self.conv1(fusionfeature)
+        fusionfeature = self.restormer2(fusionfeature)
+        fusionfeature = self.restormer3(fusionfeature)
+        fusionfeature = self.conv2(fusionfeature)
+        fusionfeature = self.softmax(fusionfeature)
+        return fusionfeature
+\end{lstlisting}
+
+\section*{附录B 系统API接口说明}
+
+\subsection*{B.1 AI融合接口}
+
+\textbf{POST /api/fuse}
+
+请求参数：FormData格式，包含over\_image和under\_image两个文件字段。
+
+响应：image/jpeg格式的融合结果图像。
+
+错误码：400（文件类型/大小/尺寸不匹配）、500（服务器内部错误）。
+
+\subsection*{B.2 传统融合接口}
+
+\textbf{POST /api/fuse/traditional}
+
+请求参数：FormData格式，包含over\_image、under\_image和algorithm三个字段，algorithm可选值为avg、max、mertens。
+
+响应：image/jpeg格式的融合结果图像。
+
+\subsection*{B.3 评估接口}
+
+\textbf{POST /api/evaluate}
+
+请求参数：FormData格式，包含fused\_image文件字段。
+
+响应：JSON格式，包含en、sd、sf、ag四项指标。
+
+\subsection*{B.4 历史查询接口}
+
+\textbf{GET /api/history}
+
+请求参数：无。
+
+响应：JSON数组，包含最近20条历史记录。
+\end{appendix}

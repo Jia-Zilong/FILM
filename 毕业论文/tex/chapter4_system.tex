@@ -1,0 +1,295 @@
+\section{基于视觉语言模型的图像融合系统设计与实现}\label{ch:system}
+
+\subsection{引言}\label{sec:ch4_intro}
+
+本章作为全文研究的系统实现部分，主要围绕基于视觉语言模型的多曝光图像融合系统展开设计、开发与验证。该部分承接第三章中FILM图像融合方法的模型结构、推理流程和实验结果，将算法研究成果进一步转化为可交互、可运行的Web应用系统，并为第五章对全文工作进行总结和展望提供实践依据。本章首先从功能性需求和非功能性需求两个方面分析系统建设目标，明确图像上传、算法选择、融合处理、质量评估和历史记录等核心功能；接着介绍系统整体架构、数据库设计以及前后端关键模块的实现过程，说明FILM模型在实际应用中的部署方式与交互流程；最后通过功能测试、性能测试、兼容性测试和运行效果展示验证系统的可用性、稳定性和实际应用价值。
+
+\subsection{系统需求分析}\label{sec:requirements}
+
+\textbf{（1）功能性需求。}
+
+基于视觉语言模型的多曝光图像融合系统需要满足以下核心功能需求：
+
+（1）\textbf{图像上传}：用户能够方便地上传过曝光和欠曝光两幅源图像。系统应支持常见的图像格式（JPEG、PNG、BMP、WebP），并提供拖拽上传和点击上传两种交互方式。
+
+（2）\textbf{算法选择}：系统应支持多种融合算法供用户选择，包括基于FILM模型的AI融合算法、基于FFMEF模型的深度学习融合算法和传统的图像融合算法（均值融合、像素最大值融合、Mertens融合）。
+
+（3）\textbf{图像融合}：系统接收用户上传的两幅源图像和选定的算法，在后端执行融合计算，生成融合结果图像并返回给前端展示。
+
+（4）\textbf{融合结果展示}：系统需要提供直观的结果展示功能，包括融合前后的图像对比查看。通过可拖动的对比滑块，用户可以方便地对比融合前后的图像差异。
+
+（5）\textbf{质量评估}：系统需要对融合结果进行客观的质量评估，计算信息熵（EN）、标准差（SD）、空间频率（SF）、平均梯度（AG）四项指标，并通过雷达图和柱状图等可视化方式直观展示。
+
+（6）\textbf{历史记录}：系统需要记录用户的融合操作历史，包括使用的算法、融合时间、评估指标等信息，支持导出为CSV格式。
+
+\textbf{（2）非功能性需求。}
+
+（1）\textbf{性能需求}：对于传统算法，处理时间应在1秒以内；对于AI融合算法，处理时间应在5秒以内。
+
+（2）\textbf{可用性需求}：系统应提供友好的用户界面，操作流程简单直观，降低用户的学习成本。
+
+（3）\textbf{安全性需求}：系统应对用户上传的文件进行严格的安全验证，包括文件类型检查（仅允许JPEG、PNG、BMP、WebP格式）、文件大小限制（不超过20MB）以及图像解码能力验证。
+
+（4）\textbf{可扩展性需求}：系统采用前后端分离的架构设计，前端和后端之间通过RESTful API进行通信，便于后续功能扩展和维护。
+
+\subsection{系统架构设计}\label{sec:system_arch}
+
+\textbf{（1）整体架构。}
+
+系统采用前后端分离的B/S（Browser/Server）架构，如\cref{fig:system_arch}所示。前端（mef-frontend）基于Vue 3框架构建单页应用（SPA），运行在用户的浏览器中。后端（api\_server.py）基于FastAPI框架构建RESTful API服务，运行在服务器上。
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=0.85\textwidth]{img/fig4_1_system_arch.png}
+    \caption{系统整体架构}
+    \label{fig:system_arch}
+\end{figure}
+
+前后端之间通过HTTP协议进行通信，后端API服务运行在0.0.0.0:8000端口，前端通过CORS（Cross-Origin Resource Sharing）跨域资源共享机制访问后端API。系统的技术栈如\cref{tab:techstack}所示。
+
+\begin{table}[htb!]
+    \caption{系统技术栈}
+    \label{tab:techstack}
+    \centering
+    \begin{tabular}{cc}
+        \hline
+        层级 & 技术 \\
+        \hline
+        前端框架 & Vue 3.5 + Vite 8 \\
+        前端UI组件库 & Element Plus \\
+        前端可视化库 & ECharts 6 \\
+        前端HTTP客户端 & Axios \\
+        后端框架 & FastAPI 0.95.2 + Uvicorn 0.22.0 \\
+        深度学习框架 & PyTorch 1.8.1 + cu111 \\
+        图像处理 & OpenCV 4.5.3 + scikit-image 0.19.3 \\
+        数据库 & SQLite（处理历史记录） \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\textbf{（2）功能模块设计。}
+
+系统主要划分为以下功能模块：
+
+（1）\textbf{图像上传模块}：提供拖拽和点击两种上传方式，支持文件格式验证、大小限制和实时预览。
+
+（2）\textbf{算法选择模块}：提供AI融合（FILM）、深度学习融合（FFMEF）和传统融合算法的选择界面。
+
+（3）\textbf{融合推理模块}：接收用户上传的图像和算法选择，在后端执行融合计算。
+
+（4）\textbf{结果展示模块}：提供融合前后图像的对比查看功能，支持可拖动的对比滑块。
+
+（5）\textbf{质量评估模块}：计算融合图像的客观质量指标，通过雷达图和柱状图进行可视化展示。
+
+（6）\textbf{历史记录模块}：记录融合操作历史，支持查看和导出。
+
+\textbf{（3）数据库设计。}
+
+系统使用SQLite数据库（mef\_history.db）存储融合操作的历史记录。数据库仅包含一张历史表（history），其结构如\cref{tab:db}所示。
+
+\begin{table}[htb!]
+    \caption{历史记录表结构}
+    \label{tab:db}
+    \centering
+    \begin{tabular}{ccc}
+        \hline
+        字段名 & 类型 & 说明 \\
+        \hline
+        id & INTEGER PRIMARY KEY AUTOINCREMENT & 自增主键 \\
+        algo & VARCHAR(50) & 使用的融合算法名称 \\
+        img\_url & VARCHAR(255) & 融合结果图像的URL路径 \\
+        time & TEXT & 融合操作时间 \\
+        en & REAL & 信息熵指标 \\
+        sd & REAL & 标准差指标 \\
+        sf & REAL & 空间频率指标 \\
+        ag & REAL & 平均梯度指标 \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\subsection{后端服务实现}\label{sec:backend}
+
+\subsubsection{FastAPI服务架构}\label{sec:fastapi_arch}
+
+后端服务（api\_server.py）基于FastAPI框架构建。FastAPI是一个现代、高性能的Python Web框架，基于Python的类型提示系统，具有自动生成交互式API文档、数据验证和高性能等特点。
+
+通过\texttt{@asynccontextmanager}定义的应用生命周期函数，在服务器启动时加载FILM模型到全局上下文（MEFFusionEngine），在关闭时清理资源。模型加载过程包括：从models/MEF.pth加载预训练权重，处理DataParallel保存的权重（移除'module.'前缀），将模型设置到GPU或CPU上并切换为评估模式。将融合结果目录（storage/results/）挂载为静态文件服务，使前端可以通过HTTP URL访问融合结果图像。
+
+系统定义了统一的文件验证函数，对所有上传文件进行三重检查：文件类型验证（仅允许image/jpeg、image/png、image/bmp、image/webp）、文件大小验证（不超过20MB）和图像解码验证（通过PIL尝试打开并校验图像内容）。
+
+系统共提供以下API端点：
+
+（1）\textbf{POST /api/fuse}：AI融合端点，接收两幅源图像，调用MEFFusionEngine（FILM模型）执行融合计算，返回融合结果JPEG图像。
+
+（2）\textbf{POST /api/fuse/ffmef}：FFMEF融合端点，接收两幅源图像，调用FFMEF模型（CVPR Workshop 2023）执行滤波器主导的深度学习融合。该模型采用HUnet编码器提取多尺度特征，通过空间交叉注意力机制实现自适应融合权重计算，最终经多尺度核预测网络（KPN）完成特征级融合。与FILM不同，FFMEF仅依赖低层视觉特征，不引入文本语义引导。
+
+（3）\textbf{POST /api/fuse/traditional}：传统融合端点，提供均值融合（avg）、像素最大值融合（max）和Mertens融合（mertens）三种算法。
+
+（4）\textbf{POST /api/evaluate}：评估端点，接收融合结果图像，计算EN、SD、SF、AG四项质量指标，并将算法名称、结果图像URL、融合操作时间和指标结果存储到SQLite数据库中。
+
+（5）\textbf{GET /api/history}：历史查询端点，从数据库中查询最近20条融合记录，按时间倒序排列。
+
+\subsubsection{融合推理引擎}\label{sec:inference_engine}
+
+MEFFusionEngine（mef\_engine.py）是后端的核心推理引擎，负责加载FILM模型并执行融合推理计算。
+
+模型初始化时，首先加载FILM网络架构（Net类），然后从models/MEF.pth加载预训练权重。由于预训练权重可能由DataParallel保存，权重键名可能带有"module."前缀，需要通过字符串处理移除该前缀：
+\begin{equation}
+    \text{new\_key} = \text{key.replace('module.', '')}
+\end{equation}
+然后根据运行环境将模型设置到GPU或CPU上，并切换为评估模式（model.eval()），确保推理过程中不更新模型参数。
+
+在文本语义输入方面，系统端为了降低部署复杂度和推理开销，没有在用户上传图像后实时调用BLIP2或大语言模型生成文本描述，而是从\texttt{VLFDataset\_h5/MEFB\_test.h5}中读取一条预先提取的文本特征作为固定语义提示张量。该策略能够保证系统稳定运行，但也意味着当前系统的文本语义引导是任务级固定提示，尚未针对每一组用户上传图像生成自适应文本描述。
+
+融合推理过程如下：
+
+（1）\textbf{色彩空间转换}：将输入的RGB源图像通过cv2.cvtColor转换到YCbCr色彩空间，分别提取Y（亮度）、Cb（蓝色差）和Cr（红色差）三个通道。
+
+（2）\textbf{Y通道融合}：将两幅源图像的Y通道（单通道灰度图像）转换为张量，归一化到[0, 1]范围，然后通过MEFFusionEngine的fuse()方法送入FILM网络进行推理。网络内部执行三级跨注意力融合和Restormer精炼，输出单通道的融合亮度结果。
+
+（3）\textbf{Cb/Cr通道融合}：Cb和Cr通道采用等权重（alpha=0.5）的经典加权平均进行融合：
+\begin{equation}
+    Cb_{fused} = 0.5 \times Cb_A + 0.5 \times Cb_B
+\end{equation}
+\begin{equation}
+    Cr_{fused} = 0.5 \times Cr_A + 0.5 \times Cr_B
+\end{equation}
+这种简单策略在保持颜色信息的同时有效降低了计算成本。
+
+（4）\textbf{结果重建}：将融合后的Y、Cb、Cr三个通道合并为三通道图像，通过cv2.cvtColor从YCbCr转换回RGB色彩空间，然后编码为JPEG格式返回。
+
+推理过程中，模型仅处理图像的Y（亮度）通道，Cb和Cr（色度）通道采用等权重的经典加权平均进行融合，既保证了融合质量又有效降低了计算成本。对于分辨率为$H \times W$的图像，网络的实际计算量仅为处理全通道图像的1/3，显著提高了推理效率。
+
+\subsubsection{质量评估与历史管理}\label{sec:evaluation_history}
+
+质量评估器（MEFEvaluator）使用numpy和OpenCV直接实现四项指标的计算。
+
+（1）\textbf{信息熵（EN）}：基于图像灰度直方图计算，衡量融合图像包含的信息量。通过numpy的histogram函数统计256个灰度级的概率分布，然后应用信息熵公式计算。
+
+（2）\textbf{标准差（SD）}：反映融合图像的对比度和灰度分布的离散程度。通过numpy的std函数直接计算。
+
+（3）\textbf{空间频率（SF）}：衡量融合图像在空间域中的总体活跃度。通过计算行频率（RF）和列频率（CF），然后$SF = \sqrt{RF^2 + CF^2}$得到。
+
+（4）\textbf{平均梯度（AG）}：反映融合图像的清晰度和纹理细节。通过计算图像在水平和垂直方向的梯度均值得到。
+
+评估端点接收到融合结果图像后，调用MEFEvaluator计算四项指标，将结果以JSON格式返回给前端，同时将算法名称、结果图像URL、操作时间和四项指标写入SQLite数据库的历史表中。前端展示的推理耗时由浏览器端在发起融合请求前后计算，用于界面反馈，不作为数据库字段存储。
+
+历史记录查询端点通过SQL查询语句从数据库中获取最近的融合记录：
+\begin{equation}
+    \text{SELECT * FROM history ORDER BY id DESC LIMIT 20}
+\end{equation}
+返回的结果按id降序排列，确保最新的记录排在最前面。前端支持将历史记录导出为CSV格式，方便用户进行后续分析和比较。
+
+\subsection{前端应用实现}\label{sec:frontend}
+
+\subsubsection{项目结构与布局}\label{sec:frontend_structure}
+
+前端项目（mef-frontend）采用Vue 3的组合式API（Composition API）进行开发，使用Vite作为构建工具。应用入口（main.js）创建Vue实例，挂载Element Plus UI库，渲染App.vue根组件。API配置通过环境变量\texttt{VITE\_API\_BASE\_URL}进行配置，默认值为\texttt{http://127.0.0.1:8000}。
+
+根组件（App.vue）采用双列栅格布局，左侧面板宽度为320px，右侧面板自适应剩余空间。左侧面板包含图像上传区域（两个DraggableUpload组件）和算法选择区域（AlgorithmSelector组件），右侧面板包含融合结果查看器（FusionViewer组件）和质量评估面板（MetricsDashboard组件）。根组件通过\texttt{useFusion()}组合式函数获取所有响应式状态和处理函数。
+
+前端整体展示效果如\cref{fig:frontend_demo}所示。
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=0.9\textwidth]{img/fig4_2_frontend_demo.png}
+    \caption{前端系统界面展示}
+    \label{fig:frontend_demo}
+\end{figure}
+
+\subsubsection{核心组件实现}\label{sec:frontend_components}
+
+（1）\textbf{拖拽上传组件（DraggableUpload.vue）}：实现了拖拽和点击两种图像上传方式。组件使用HTML5 Drag and Drop API实现拖拽交互，监听dragenter、dragover、dragleave和drop四个事件，在拖拽放置时检查文件类型是否为图像文件，通过\texttt{URL.createObjectURL}生成预览URL。组件暴露file和preview两个v-model属性，使父组件能够双向绑定上传文件和预览URL。
+
+（2）\textbf{融合查看器（FusionViewer.vue）}：实现了融合前后图像的对比查看功能，核心是一个可拖动的对比滑块。滑块使用HTML range input驱动，通过CSS的\texttt{clip-path: inset()}属性控制左右两幅图像的显示区域。融合处理过程中，查看器显示骨架屏加载动画，带有闪烁效果，提示用户正在进行计算。
+
+（3）\textbf{指标面板（MetricsDashboard.vue）}：使用ECharts库进行质量指标的可视化展示，包含雷达图、柱状图和指标表格三个部分。雷达图展示四项指标的相对表现，柱状图以垂直柱状图展示各项指标的具体数值，指标表格以紧凑的表格形式展示四项指标的名称、数值和单位。组件通过Vue的\texttt{watch()}函数监听metrics状态的变化，当新的评估数据到达时自动更新图表。
+
+（4）\textbf{历史记录抽屉（HistoryDrawer.vue）}：使用Element Plus的Drawer组件实现历史记录抽屉。点击"历史记录"按钮时抽屉从右侧滑出，显示最近的融合操作记录。每条历史记录以卡片的形式展示，包含融合结果缩略图、时间戳、算法标签和迷你指标。组件通过\texttt{useHistory()}组合式函数从后端API获取历史数据，并支持将历史记录导出为CSV格式。
+
+\subsubsection{状态管理与API交互}\label{sec:state_management}
+
+useFusion.js是系统的核心组合式函数，管理所有的响应式状态和API交互逻辑。核心响应式状态包括：overFile/underFile（用户上传的图像文件）、overPreview/underPreview（图像预览URL）、algorithm（当前选择的融合算法）、fusing（融合操作进行中状态）、fusionResult（融合结果图像URL）、metrics（融合质量评估指标对象）等。
+
+\texttt{startFusion()}函数是核心的融合处理流程：
+
+（1）\textbf{前置验证}：检查两幅源图像是否都已上传，验证失败时通过Element Plus的ElMessage组件显示错误提示。
+
+（2）\textbf{API端点选择}：根据算法类型选择API端点（AI融合使用\texttt{/api/fuse}，FFMEF融合使用\texttt{/api/fuse/ffmef}，传统融合使用\texttt{/api/fuse/traditional}）。对于传统融合，还需要将算法名称（avg/max/mertens）作为表单字段发送。
+
+（3）\textbf{请求发送}：将两幅图像以FormData形式发送，使用Axios库的post方法，设置responseType为'blob'以接收二进制图像数据。
+
+（4）\textbf{结果处理}：接收到融合结果Blob后，创建对象URL用于展示。然后调用\texttt{/api/evaluate}端点计算质量评估指标，将结果更新到响应式状态中。
+
+（5）\textbf{状态更新}：更新fusing状态为false，触发前端UI从加载状态切换到结果展示状态。
+
+useHistory.js是另一个核心组合式函数，负责管理历史记录相关的状态和操作。它提供了获取历史记录列表、导出CSV等功能，通过调用\texttt{/api/history}端点从后端获取数据。
+
+\subsection{系统测试与运行效果}\label{sec:testing}
+
+\textbf{（1）功能测试。}
+
+对系统的各项核心功能进行了全面的测试验证，结果如\cref{tab:functional_test}所示。
+
+\begin{table}[htb!]
+    \caption{功能测试结果}
+    \label{tab:functional_test}
+    \centering
+    \begin{tabular}{ccc}
+        \hline
+        测试项 & 预期结果 & 实际结果 \\
+        \hline
+        上传JPEG/PNG/BMP/WebP & 成功预览 & 通过 \\
+        上传非图像文件 & 拒绝并提示 & 通过 \\
+        上传超过20MB的文件 & 拒绝并提示 & 通过 \\
+        上传尺寸不匹配的图像 & 拒绝并提示 & 通过 \\
+        AI融合 & 返回融合结果 & 通过 \\
+        传统融合 & 返回融合结果 & 通过 \\
+        质量评估 & 显示四项指标 & 通过 \\
+        历史记录 & 显示最近20条记录 & 通过 \\
+        CSV导出 & 下载CSV文件 & 通过 \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\textbf{（2）性能测试。}
+
+对系统的处理性能进行了测试，测试环境为Intel Core i7处理器、NVIDIA GeForce RTX GPU、16GB内存，结果如\cref{tab:performance}所示。
+
+\begin{table}[htb!]
+    \caption{性能测试结果}
+    \label{tab:performance}
+    \centering
+    \begin{tabular}{ccc}
+        \hline
+        算法 & 平均处理时间 & 结果图像大小 \\
+        \hline
+        AI融合（FILM） & $\sim$2.5s & $\sim$180KB \\
+        深度学习融合（FFMEF） & $\sim$1.2s & $\sim$175KB \\
+        均值融合 & $\sim$0.05s & $\sim$200KB \\
+        最大值融合 & $\sim$0.03s & $\sim$190KB \\
+        Mertens融合 & $\sim$0.8s & $\sim$210KB \\
+        \hline
+    \end{tabular}
+\end{table}
+
+AI融合算法的处理时间约为2.5秒，其中模型推理约占总时间的70\%，图像预处理和后处理约占30\%。FFMEF模型由于结构相对轻量且仅使用低层视觉特征，处理时间约为1.2秒，介于AI融合与传统融合之间。传统融合算法的处理时间均在1秒以内，满足了系统的性能需求。
+
+\textbf{（3）兼容性测试。}
+
+对系统在不同浏览器环境下的兼容性进行了测试。在Chrome 120+、Firefox 120+、Edge 120+和Safari 17+浏览器中，上传功能、融合功能和可视化功能均能正常运行，系统在所有主流浏览器中均能正常运行，各项功能表现一致。
+
+\textbf{（4）融合效果展示。}
+
+系统在不同场景下的融合效果如\cref{fig:fusion_results}所示。从图中可以看出，FILM方法能够有效保留过曝光图像的暗部细节和欠曝光图像的亮部细节，生成曝光均衡、细节丰富的融合结果。
+
+\begin{figure}[htb!]
+    \centering
+    \includegraphics[width=0.95\textwidth]{img/fig4_3_fusion_results.png}
+    \caption{系统融合效果展示}
+    \label{fig:fusion_results}
+\end{figure}
+
+\subsection{本章小结}\label{sec:ch4_summary}
+
+本章详细阐述了基于视觉语言模型的多曝光图像融合系统的设计与实现过程。首先从功能性需求和非功能性需求两个方面进行了系统需求分析；然后介绍了系统的整体架构设计和功能模块划分；接着从后端和前端两个层面详细描述了各功能模块的实现过程，包括FastAPI服务架构、融合推理引擎、质量评估模块、项目布局、核心组件和状态管理；最后展示了系统的运行效果，并通过功能测试、性能测试和兼容性测试验证了系统的可用性和稳定性。

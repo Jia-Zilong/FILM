@@ -1,0 +1,51 @@
+# IDE and tool configs
+.claude/
+.idea/
+.vscode/
+
+# Python cache
+__pycache__/
+**/__pycache__/
+*.pyc
+*.pyo
+*.egg-info/
+
+# LaTeX build artifacts
+毕业论文/*.aux
+毕业论文/*.bbl
+毕业论文/*.bcf
+毕业论文/*.blg
+毕业论文/*.log
+毕业论文/*.out
+毕业论文/*.toc
+毕业论文/*.lof
+毕业论文/*.lot
+毕业论文/*.run.xml
+毕业论文/*.pdf
+毕业论文/tex/pages/*.aux
+毕业论文/tex/*.aux
+
+# Large data (download separately per README)
+VLFDataset/
+VLFDataset_h5/
+
+# Output and generated files
+test_output/
+storage/
+images/
+img/
+mef_history.db
+
+# External cloned repos and comparison scripts
+compare_methods/
+
+# Frontend
+mef-frontend/node_modules/
+mef-frontend/dist/
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Experiments
+exp/
