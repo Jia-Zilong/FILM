@@ -479,6 +479,162 @@ async def evaluate_image(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/fuse/compare", summary="多算法并行对比融合")
+async def fuse_compare(
+        files: list[UploadFile] = File(...),
+        quality: int = Form(95),
+        max_dim: int = Form(1024),
+):
+    """Run all 5 algorithms on the same input images and return comparison results."""
+    try:
+        if len(files) < 2:
+            raise HTTPException(status_code=400, detail="至少需要 2 张图片")
+        if len(files) > 10:
+            raise HTTPException(status_code=400, detail="最多支持 10 张图片")
+
+        # Validate all files
+        data_list = []
+        sizes = []
+        for i, f in enumerate(files):
+            validate_image(f, f"image_{i}")
+            data = await f.read()
+            if len(data) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=400, detail=f"image_{i} 文件过大")
+            data_list.append(data)
+            sizes.append(validate_image_payload(data, f"image_{i}"))
+
+        if not all(s == sizes[0] for s in sizes):
+            raise HTTPException(status_code=400, detail="所有输入图像必须尺寸一致")
+
+        n_images = len(data_list)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        results = []
+
+        # ---------- helpers ----------
+        def _run_algo(name: str, fuse_fn):
+            """Run a single algorithm, compute metrics, save result, record entry."""
+            try:
+                fused_bytes = fuse_fn()
+                save_filename = f"fused_compare_{name}_{timestamp}.jpg"
+                save_path = save_dir / save_filename
+                with open(save_path, "wb") as sf:
+                    sf.write(fused_bytes)
+                print(f"[SAVE] {name} 对比结果已保存至 {save_path}")
+
+                # Compute fast metrics on grayscale
+                fused_arr = cv2.imdecode(np.frombuffer(fused_bytes, np.uint8), cv2.IMREAD_GRAYSCALE)
+                metrics = ImageMetrics.evaluate(fused_arr)
+
+                entry = {
+                    "algo": name,
+                    "image_url": f"/static/{save_filename}",
+                    "en": metrics["EN"],
+                    "sd": metrics["SD"],
+                    "sf": metrics["SF"],
+                    "ag": metrics["AG"],
+                }
+                results.append(entry)
+            except Exception as e:
+                print(f"[ERROR] {name} 算法发生错误：")
+                traceback.print_exc()
+                results.append({"algo": name, "error": str(e)})
+
+        def _traditional_avg():
+            result = cv2.imdecode(np.frombuffer(data_list[0], np.uint8), cv2.IMREAD_COLOR)
+            for i in range(1, n_images):
+                img = cv2.imdecode(np.frombuffer(data_list[i], np.uint8), cv2.IMREAD_COLOR)
+                result = cv2.addWeighted(result, 0.5, img, 0.5, 0)
+            _, buf = cv2.imencode('.jpg', result, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+            return buf.tobytes()
+
+        def _traditional_max():
+            imgs = [cv2.imdecode(np.frombuffer(d, np.uint8), cv2.IMREAD_COLOR) for d in data_list]
+            result = np.maximum.reduce(imgs)
+            _, buf = cv2.imencode('.jpg', result, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+            return buf.tobytes()
+
+        def _traditional_mertens():
+            imgs = [cv2.imdecode(np.frombuffer(d, np.uint8), cv2.IMREAD_COLOR) for d in data_list]
+            merge_mertens = cv2.createMergeMertens()
+            fused_float = merge_mertens.process(imgs)
+            fused = np.clip(fused_float * 255, 0, 255).astype(np.uint8)
+            _, buf = cv2.imencode('.jpg', fused, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+            return buf.tobytes()
+
+        def _ai_fuse():
+            if film_engine is None:
+                raise RuntimeError("FILM Fusion engine is not ready")
+            return film_engine.fuse_multi(data_list, quality=quality, max_dim=max_dim)
+
+        def _ffmef_fuse():
+            if ffmef_engine is None:
+                raise RuntimeError("FFMEF engine is not ready")
+            if n_images == 2:
+                # Single 2-image FFMEF fusion
+                fused_bgr = _ffmef_two(data_list[0], data_list[1])
+                _, buf = cv2.imencode('.jpg', fused_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+                return buf.tobytes()
+            else:
+                # Pairwise iteration (FFMEF is 2-input only)
+                current = data_list[0]
+                for i in range(1, n_images):
+                    current = _ffmef_two(current, data_list[i])
+                    print(f"[ffmef] Pairwise step {i}/{n_images - 1} done")
+                # current is a BGR numpy array from _ffmef_two
+                _, buf = cv2.imencode('.jpg', current, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+                return buf.tobytes()
+
+        def _ffmef_two(over_bytes, under_bytes):
+            """FFMEF fusion for a single pair of images. Returns BGR numpy array."""
+            import torch
+            model = ffmef_engine["model"]
+            device = ffmef_engine["device"]
+
+            img1 = cv2.imdecode(np.frombuffer(over_bytes, np.uint8), cv2.IMREAD_COLOR)
+            img2 = cv2.imdecode(np.frombuffer(under_bytes, np.uint8), cv2.IMREAD_COLOR)
+            if img1 is None or img2 is None:
+                raise RuntimeError("FFMEF image decode failed")
+
+            y1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)[:, :, 0]
+            y2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)[:, :, 0]
+
+            y1_t = torch.from_numpy(y1.astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0).to(device)
+            y2_t = torch.from_numpy(y2.astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0).to(device)
+
+            with torch.no_grad():
+                fused_y = model(img0_RGB=None, img0_Y=y1_t, img1_RGB=None, img1_Y=y2_t)
+                fused_y = fused_y.clamp(0, 1)
+
+            fused_y_np = (fused_y.squeeze(0).squeeze(0).cpu().numpy() * 255.0).astype(np.uint8)
+
+            cb1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)[:, :, 1]
+            cr1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)[:, :, 2]
+            cb2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)[:, :, 1]
+            cr2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)[:, :, 2]
+            cb_f = ((cb1.astype(np.float32) + cb2.astype(np.float32)) / 2).astype(np.uint8)
+            cr_f = ((cr1.astype(np.float32) + cr2.astype(np.float32)) / 2).astype(np.uint8)
+
+            fused_ycrcb = cv2.merge([fused_y_np, cb_f, cr_f])
+            fused_rgb = cv2.cvtColor(fused_ycrcb, cv2.COLOR_YCrCb2BGR)
+            return fused_rgb
+
+        # ---------- run all 5 algorithms ----------
+        _run_algo("ai", _ai_fuse)
+        _run_algo("ffmef", _ffmef_fuse)
+        _run_algo("avg", _traditional_avg)
+        _run_algo("max", _traditional_max)
+        _run_algo("mertens", _traditional_mertens)
+
+        return {"results": results}
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("[ERROR] 多算法对比发生错误：")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/api/history", summary="获取历史处理记录")
 async def get_history():
     try:
