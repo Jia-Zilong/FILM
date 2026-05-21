@@ -3,6 +3,7 @@ import { ref, computed, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
 import * as echarts from 'echarts'
 import { algorithms } from '../data/algorithms.js'
 import { useFusion } from '../composables/useFusion'
+import { API_BASE } from '../config/api'
 
 const props = defineProps({
   imageFiles: { type: Array, default: () => [] },
@@ -193,6 +194,12 @@ function initRadarChart(results) {
 function fmtMetric(result, key) {
   return fmt(result[key])
 }
+
+function imageUrl(url) {
+  if (!url) return ''
+  if (url.startsWith('http://') || url.startsWith('https://')) return url
+  return `${API_BASE}${url}`
+}
 </script>
 
 <template>
@@ -262,7 +269,7 @@ function fmtMetric(result, key) {
               </span>
             </div>
             <div class="card-image">
-              <img :src="result.image_url" :alt="getAlgoInfo(result.algo).fullName" />
+              <img :src="imageUrl(result.image_url)" :alt="getAlgoInfo(result.algo).fullName" />
             </div>
             <div class="card-metrics">
               <div class="metric-item" v-for="k in METRIC_KEYS" :key="k">
