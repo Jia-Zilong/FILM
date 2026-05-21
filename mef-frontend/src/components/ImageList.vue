@@ -24,14 +24,17 @@ const handleFiles = (files) => {
     ElMessage.warning(`最多支持 ${props.maxCount} 张图片，已添加前 ${remaining} 张`)
   }
 
-  const newFiles = [...props.modelValue]
-  const newPreviews = [...previews.value]
+  // Revoke old preview URLs to prevent memory leaks when adding files
+  const oldPreviews = [...previews.value]
+  const newFiles = []
+  const newPreviews = []
 
-  for (const file of toAdd) {
-    if (!file.type.startsWith('image/')) {
-      ElMessage.error(`跳过非图片文件: ${file.name}`)
-      continue
-    }
+  for (const url of oldPreviews) {
+    URL.revokeObjectURL(url)
+  }
+
+  for (const file of [...props.modelValue, ...toAdd]) {
+    if (!file.type.startsWith('image/')) continue
     newFiles.push(file)
     newPreviews.push(URL.createObjectURL(file))
   }
