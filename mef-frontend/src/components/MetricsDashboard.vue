@@ -1,12 +1,34 @@
 <script setup>
-import { ref, watch, nextTick, onMounted, onBeforeUnmount } from 'vue'
+import { ref, watch, nextTick, onMounted, onBeforeUnmount, computed } from 'vue'
 import * as echarts from 'echarts'
+
+const ALL_METRICS = ['EN', 'SD', 'SF', 'AG', 'VIF', 'Qabf']
 
 const props = defineProps({
   metrics: { type: Object, default: null },
   fusionTime: { type: Number, default: null },
-  fusedImageUrl: { type: String, default: '' }
+  fusedImageUrl: { type: String, default: '' },
+  selectedMetrics: { type: Array, default: () => [...ALL_METRICS] },
 })
+
+const localSelected = ref([...ALL_METRICS])
+
+const effectiveMetrics = computed(() => {
+  // Use prop if provided, otherwise use local state
+  const sel = props.selectedMetrics && props.selectedMetrics.length > 0
+    ? props.selectedMetrics
+    : localSelected.value
+  return sel
+})
+
+const toggleMetric = (m) => {
+  const idx = localSelected.value.indexOf(m)
+  if (idx >= 0) {
+    localSelected.value.splice(idx, 1)
+  } else {
+    localSelected.value.push(m)
+  }
+}
 
 const downloadImage = () => {
   if (!props.fusedImageUrl) return
@@ -28,6 +50,43 @@ const handleResize = () => {
   barChart?.resize()
 }
 
+const getMetricValue = (label) => {
+  if (!props.metrics) return '--'
+  const val = props.metrics[label]
+  if (val === null || val === undefined) return '--'
+  if (typeof val === 'number') return val.toFixed(4)
+  return '--'
+}
+
+const getRadarValues = () => {
+  return effectiveMetrics.value.map((m) => {
+    if (!props.metrics) return 0
+    const v = props.metrics[m]
+    return (typeof v === 'number' && v > 0) ? v : 0
+  })
+}
+
+const getBarValues = () => {
+  return effectiveMetrics.value.map((m) => {
+    if (!props.metrics) return 0
+    const v = props.metrics[m]
+    return (typeof v === 'number' && v > 0) ? v : 0
+  })
+}
+
+const radarIndicators = computed(() => {
+  const maxes = { EN: 8, SD: 80, SF: 25, AG: 10, VIF: 2, Qabf: 1.0 }
+  return effectiveMetrics.value.map((m) => ({ name: m, max: maxes[m] ?? 1 }))
+})
+
+const barData = computed(() => {
+  const colors = { EN: '#2563EB', SD: '#059669', SF: '#D97706', AG: '#DC2626', VIF: '#8B5CF6', Qabf: '#06B6D4' }
+  return getBarValues().map((v, i) => ({
+    value: v,
+    itemStyle: { color: colors[effectiveMetrics.value[i]] || '#2563EB' },
+  }))
+})
+
 const initRadarChart = () => {
   if (!chartRef.value || !props.metrics) return
   if (radarChart) radarChart.dispose()
@@ -36,40 +95,26 @@ const initRadarChart = () => {
     tooltip: {
       backgroundColor: 'rgba(255, 255, 255, 0.95)',
       borderColor: '#E2E8F0',
-      textStyle: { color: '#0F172A' }
+      textStyle: { color: '#0F172A' },
     },
     radar: {
-      indicator: [
-        { name: 'EN', max: 8 },
-        { name: 'SD', max: 80 },
-        { name: 'SF', max: 25 },
-        { name: 'AG', max: 10 },
-        { name: 'VIF', max: 2 },
-        { name: 'Qabf', max: 1.0 }
-      ],
+      indicator: radarIndicators.value,
       radius: '60%',
       axisName: { color: '#64748B', fontSize: 10, fontWeight: 600 },
       splitArea: { areaStyle: { color: ['rgba(248, 250, 252, 0.5)', 'rgba(241, 245, 249, 0.3)'] } },
       axisLine: { lineStyle: { color: '#E2E8F0' } },
-      splitLine: { lineStyle: { color: '#E2E8F0' } }
+      splitLine: { lineStyle: { color: '#E2E8F0' } },
     },
     series: [{
       type: 'radar',
       data: [{
-        value: [
-          props.metrics.EN,
-          props.metrics.SD,
-          props.metrics.SF,
-          props.metrics.AG,
-          props.metrics.VIF ?? 0,
-          props.metrics.Qabf ?? 0
-        ],
+        value: getRadarValues(),
         name: '评估得分',
         areaStyle: { color: 'rgba(37, 99, 235, 0.1)' },
         lineStyle: { color: '#2563EB', width: 2 },
-        itemStyle: { color: '#2563EB', borderWidth: 2, borderColor: '#fff' }
-      }]
-    }]
+        itemStyle: { color: '#2563EB', borderWidth: 2, borderColor: '#fff' },
+      }],
+    }],
   })
 }
 
@@ -77,38 +122,27 @@ const initBarChart = () => {
   if (!barChartRef.value || !props.metrics) return
   if (barChart) barChart.dispose()
   barChart = echarts.init(barChartRef.value)
-
-  const vifVal = props.metrics.VIF != null ? props.metrics.VIF : 0
-  const qabfVal = props.metrics.Qabf != null ? props.metrics.Qabf : 0
-
   barChart.setOption({
     grid: { top: 12, bottom: 22, left: 30, right: 8 },
     xAxis: {
       type: 'category',
-      data: ['EN', 'SD', 'SF', 'AG', 'VIF', 'Qabf'],
+      data: effectiveMetrics.value,
       axisLine: { lineStyle: { color: '#E2E8F0' } },
-      axisLabel: { color: '#64748B', fontSize: 10, fontWeight: 600 }
+      axisLabel: { color: '#64748B', fontSize: 10, fontWeight: 600 },
     },
     yAxis: {
       type: 'value',
       splitLine: { lineStyle: { color: '#F1F5F9' } },
-      axisLabel: { color: '#94A3B8', fontSize: 9 }
+      axisLabel: { color: '#94A3B8', fontSize: 9 },
     },
     series: [{
       type: 'bar',
-      data: [
-        { value: props.metrics.EN, itemStyle: { color: '#2563EB' } },
-        { value: props.metrics.SD, itemStyle: { color: '#059669' } },
-        { value: props.metrics.SF, itemStyle: { color: '#D97706' } },
-        { value: props.metrics.AG, itemStyle: { color: '#DC2626' } },
-        { value: vifVal, itemStyle: { color: '#8B5CF6' } },
-        { value: qabfVal, itemStyle: { color: '#06B6D4' } }
-      ],
+      data: barData.value,
       barWidth: 18,
       itemStyle: { borderRadius: '4px 4px 0 0' },
       animationDuration: 600,
-      animationEasing: 'cubicOut'
-    }]
+      animationEasing: 'cubicOut',
+    }],
   })
 }
 
@@ -130,6 +164,13 @@ watch(() => props.fusedImageUrl, (url) => {
   }
 })
 
+watch(() => effectiveMetrics.value.length, () => {
+  if (props.metrics) nextTick(() => {
+    initRadarChart()
+    initBarChart()
+  })
+})
+
 onMounted(() => {
   window.addEventListener('resize', handleResize)
 })
@@ -144,31 +185,42 @@ onBeforeUnmount(() => {
 <template>
   <Transition name="slide-up">
     <div v-if="fusedImageUrl" class="metrics-bar">
-      <!-- Metrics values section: only when metrics exist -->
+      <!-- Metric selection checkboxes -->
+      <div class="metric-toggles">
+        <label
+          v-for="m in ALL_METRICS"
+          :key="m"
+          class="metric-toggle"
+          :class="{ active: effectiveMetrics.includes(m) }"
+        >
+          <input type="checkbox" :checked="effectiveMetrics.includes(m)" @change="toggleMetric(m)" />
+          <span>{{ m }}</span>
+        </label>
+      </div>
+
+      <!-- Metric values -->
       <div v-if="metrics" class="metrics-values">
-        <div class="metric-row" v-for="m in [
-          { label: 'EN', value: metrics.EN.toFixed(4) },
-          { label: 'SD', value: metrics.SD.toFixed(4) },
-          { label: 'SF', value: metrics.SF.toFixed(4) },
-          { label: 'AG', value: metrics.AG.toFixed(4) },
-          { label: 'VIF', value: metrics.VIF != null ? metrics.VIF.toFixed(4) : '--' },
-          { label: 'Qabf', value: metrics.Qabf != null ? metrics.Qabf.toFixed(4) : '--' },
-        ]" :key="m.label">
-          <span class="metric-label">{{ m.label }}</span>
-          <span class="metric-value">{{ m.value }}</span>
+        <div
+          class="metric-row"
+          v-for="m in ALL_METRICS"
+          :key="'v-' + m"
+          v-show="effectiveMetrics.includes(m)"
+        >
+          <span class="metric-label">{{ m }}</span>
+          <span class="metric-value">{{ getMetricValue(m) }}</span>
         </div>
       </div>
 
-      <!-- Charts: only when metrics exist -->
-      <div v-if="metrics" class="chart-section">
+      <!-- Charts -->
+      <div v-if="metrics && effectiveMetrics.length > 0" class="chart-section">
         <div ref="chartRef" class="radar-chart"></div>
       </div>
 
-      <div v-if="metrics" class="chart-section flex-grow">
+      <div v-if="metrics && effectiveMetrics.length > 0" class="chart-section flex-grow">
         <div ref="barChartRef" class="bar-chart"></div>
       </div>
 
-      <!-- Perf info + download: always visible when fused image exists -->
+      <!-- Perf info + download -->
       <div class="perf-info">
         <span class="perf-item" v-if="fusionTime">
           <span class="perf-label">耗时</span>
@@ -176,7 +228,7 @@ onBeforeUnmount(() => {
         </span>
         <span class="perf-item">
           <span class="perf-label">尺寸</span>
-          <span class="perf-value">{{ imageWidth }}×{{ imageHeight }}</span>
+          <span class="perf-value">{{ imageWidth }}x{{ imageHeight }}</span>
         </span>
         <button class="download-btn" @click="downloadImage">
           <span class="dl-icon">⬇</span>
@@ -198,6 +250,37 @@ onBeforeUnmount(() => {
   border: 1px solid var(--color-glass-border);
   border-radius: 12px;
   box-shadow: var(--shadow-glass);
+}
+
+.metric-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 60px;
+  flex-shrink: 0;
+  justify-content: center;
+}
+
+.metric-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  padding: 2px 4px;
+  border-radius: 4px;
+  transition: all 0.15s;
+}
+
+.metric-toggle.active {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.metric-toggle input {
+  display: none;
 }
 
 .metrics-values {
@@ -291,11 +374,6 @@ onBeforeUnmount(() => {
 .download-btn:hover:not(:disabled) {
   transform: translateY(-1px);
   box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
-}
-
-.download-btn:disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 .dl-icon {
