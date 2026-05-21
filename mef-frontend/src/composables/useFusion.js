@@ -181,19 +181,27 @@ export function useFusion() {
         method: 'POST',
         body: formData,
       })
+
+      const contentType = res.headers.get('content-type') || ''
+      let data = null
+      let errText = ''
+
+      if (contentType.includes('application/json')) {
+        data = await res.json()
+      } else {
+        errText = await res.text()
+      }
+
       if (res.ok) {
-        const data = await res.json()
-        if (data.code === 200) {
+        if (data && data.results && data.results.length > 0) {
+          comparisonResults.value = data.results
+        } else if (data && data.data) {
           comparisonResults.value = data.data
-        } else {
-          const errText = await res.text()
-          console.error('API error:', errText)
-          ElMessage.error('对比请求失败: ' + (data?.detail || errText))
         }
       } else {
-        const errText = await res.text()
-        console.error('HTTP error:', res.status, errText)
-        ElMessage.error(`HTTP ${res.status}: ${errText}`)
+        const msg = data?.detail || errText || '未知错误'
+        console.error('API error:', res.status, msg)
+        ElMessage.error(`HTTP ${res.status}: ${msg}`)
       }
       if (comparisonResults.value && comparisonResults.value.length > 0) {
         ElMessage.success('对比完成')
