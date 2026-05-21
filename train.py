@@ -25,6 +25,9 @@ import shutil
 import re
 warnings.filterwarnings('ignore')
 
+import torchvision.transforms.functional as TF
+import random
+
 os.environ["CUDA_VISIBLE_DEVICES"] = "0, 1, 2, 3, 4, 5, 6, 7"
 os.environ['KMP_DUPLICATE_LIB_OK'] = 'True'
 sys.path.append(os.getcwd())
@@ -34,15 +37,15 @@ logging.basicConfig(level=logging.CRITICAL)
 parser = argparse.ArgumentParser()
 
 
-parser.add_argument('--i2t_dim', type=int, default=32, help='')
-parser.add_argument('--hidden_dim', type=int, default=256, help='')
-parser.add_argument('--numepochs', type=int, default=150, help='')
-parser.add_argument('--lr', type=float, default=1e-5, help='')
+parser.add_argument('--hidden_dim', type=int, default=256, help='[DEPRECATED] No longer used by new architecture')
+parser.add_argument('--i2t_dim', type=int, default=32, help='[DEPRECATED] No longer used by new architecture')
+parser.add_argument('--numepochs', type=int, default=200, help='')
+parser.add_argument('--lr', type=float, default=5e-5, help='')
 parser.add_argument('--gamma', type=float, default=0.6, help='')
 parser.add_argument('--step_size', type=int, default=50, help='')
-parser.add_argument('--batch_size', type=int, default=2, help='')
+parser.add_argument('--batch_size', type=int, default=4, help='')
 parser.add_argument('--loss_grad_weight', type=int, default=20, help='')
-parser.add_argument('--loss_ssim', type=int, default=0, help='')
+parser.add_argument('--loss_ssim', type=float, default=0.1, help='')
 parser.add_argument('--dataset_path', type=str, default="VLFDataset_h5\MSRS_train.h5", help='')
 opt = parser.parse_args()
 
@@ -60,8 +63,6 @@ weight_decay = 0
 batch_size = opt.batch_size
 weight_ingrad = opt.loss_grad_weight
 weight_ssim = opt.loss_ssim
-hidden_dim = opt.hidden_dim
-i2t_dim = opt.i2t_dim
 dataset_path = opt.dataset_path
 exp_name = ''
 
@@ -72,8 +73,7 @@ model
 '''
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-model = torch.nn.DataParallel(
-    Net(hidden_dim=hidden_dim, image2text_dim=i2t_dim))
+model = torch.nn.DataParallel(Net(mid_channel=32))
 if pre_model != "":
     model.load_state_dict(torch.load(pre_model)['model'])
     print('load_pretrain_model')
@@ -134,14 +134,37 @@ prev_time = time.time()
 start_time = time.time()
 loss = Fusionloss(coeff_grad=weight_ingrad, device=device)
 
+def random_aug(a, b):
+    """Apply the same random flip/rotation to both images."""
+    # Random horizontal flip
+    if random.random() > 0.5:
+        a = TF.hflip(a)
+        b = TF.hflip(b)
+    # Random rotation (0, 90, 180, 270)
+    angle = random.choice([0, 90, 180, 270])
+    if angle != 0:
+        a = TF.rotate(a, angle)
+        b = TF.rotate(b, angle)
+    return a, b
+
+
 for epoch in range(num_epochs):
     ''' train '''
     s_temp = time.time()
     model.train()
     for i, (data_IR, data_VIS, text, index) in enumerate(trainloader):
-        data_VIS, data_IR, text = data_VIS.to(device), data_IR.to(device), text.to(device)
-        text = text.squeeze(1).to(device)
-        F = model(data_IR, data_VIS, text)
+        data_VIS, data_IR = data_VIS.to(device), data_IR.to(device)
+
+        # Data augmentation: same transform for both images
+        aug_ir, aug_vis = [], []
+        for j in range(data_IR.shape[0]):
+            a, b = random_aug(data_IR[j], data_VIS[j])
+            aug_ir.append(a)
+            aug_vis.append(b)
+        data_IR = torch.stack(aug_ir)
+        data_VIS = torch.stack(aug_vis)
+
+        F = model(data_IR, data_VIS)
         batchsize, channels, rows, columns = data_IR.shape
         weighttemp = int(np.sqrt(rows * columns))
         lplssimA, lpA, lssimA = criterion(image_in=data_IR, image_out=F, weight=weighttemp)

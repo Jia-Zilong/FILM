@@ -32,7 +32,7 @@ save_path = os.path.join("test_output", dataset_name, "Gray")
 os.makedirs(save_path, exist_ok=True)
 
 device = 'cuda' if torch.cuda.is_available() else 'cpu'
-model = Net(hidden_dim=256, image2text_dim=32).to(device)
+model = Net(mid_channel=32).to(device)
 model = nn.DataParallel(model)
 
 model.load_state_dict(torch.load(ckpt_path)['model'])
@@ -78,13 +78,12 @@ print("\n开始测试...\n")
 
 with torch.no_grad():
     for i, (data_IR, data_VIS, text, index) in tqdm(enumerate(testloader), total=len(testloader)):
-        text = text.squeeze(1).cuda()
         data_IR = torch.FloatTensor(data_IR).cuda()
         data_VIS = torch.FloatTensor(data_VIS).cuda()
 
-        data_Fuse = model(data_IR, data_VIS, text)[0]
+        data_Fuse = model(data_IR, data_VIS)[0]
 
-        data_Fuse = (data_Fuse - torch.min(data_Fuse)) / (torch.max(data_Fuse) - torch.min(data_Fuse))
+        data_Fuse = torch.clamp(data_Fuse, 0, 1)
         fi = np.squeeze((data_Fuse * 255).detach().cpu().numpy()).astype('uint8')
 
         img_save(fi, index[0], save_path)

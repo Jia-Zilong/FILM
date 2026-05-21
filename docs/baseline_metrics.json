@@ -1,0 +1,13 @@
+{
+  "model": "MEF.pth (original, 2024 ICML)",
+  "dataset": "SICE (MEFB test set)",
+  "date": "2026-05-21",
+  "metrics": {
+    "EN": 7.32,
+    "SD": 68.97,
+    "SF": 20.96,
+    "AG": 6.11,
+    "VIF": 1.52,
+    "Qabf": 0.77
+  }
+}
