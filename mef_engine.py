@@ -3,6 +3,7 @@ import torchvision.transforms as transforms
 from PIL import Image
 import io
 import os
+from typing import List
 from collections import OrderedDict
 
 # 从原工程导入相关模块
@@ -103,7 +104,7 @@ class MEFFusionEngine:
         fused_rgb.save(output_buffer, format="JPEG", quality=quality)
         return output_buffer.getvalue()
 
-    def fuse_multi(self, image_bytes_list: list[bytes], quality: int = 95, max_dim: int = 1024) -> bytes:
+    def fuse_multi(self, image_bytes_list: List[bytes], quality: int = 95, max_dim: int = 1024) -> bytes:
         """
         Pairwise iterative fusion for N>2 images.
         Fuses [img1 + img2] -> fused12, then [fused12 + img3] -> fused123, etc.

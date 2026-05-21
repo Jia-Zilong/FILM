@@ -3,6 +3,7 @@ from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from mef_engine import MEFFusionEngine
+from typing import List
 import uvicorn
 import sys
 import traceback
@@ -201,7 +202,7 @@ async def fuse_images(
 
 @app.post("/api/fuse-multi", summary="多图融合 (2-10张)")
 async def fuse_multi_images(
-        files: list[UploadFile] = File(...),
+        files: List[UploadFile] = File(...),
         algo_type: str = Form("ai"),
         quality: int = Form(95),
         max_dim: int = Form(1024),
@@ -481,7 +482,7 @@ async def evaluate_image(
 
 @app.post("/api/fuse/compare", summary="多算法并行对比融合")
 async def fuse_compare(
-        files: list[UploadFile] = File(...),
+        files: List[UploadFile] = File(...),
         quality: int = Form(95),
         max_dim: int = Form(1024),
 ):
