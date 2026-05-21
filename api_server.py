@@ -168,18 +168,24 @@ print("[DB] SQLite 数据库初始化完成！")
 
 @app.post("/api/fuse")
 async def fuse_images(
-        over_img: UploadFile = File(...),
-        under_img: UploadFile = File(...)
+        files: List[UploadFile] = File(...),
+        algo_type: str = Form("ai"),
+        quality: int = Form(95),
+        max_dim: int = Form(1024),
 ):
     try:
         if film_engine is None:
             raise HTTPException(status_code=503, detail="FILM Fusion engine is not ready")
 
-        over_bytes, over_size = await read_and_validate(over_img, "over image")
-        under_bytes, under_size = await read_and_validate(under_img, "under image")
-        validate_same_size(over_size, under_size)
+        if len(files) != 2:
+            raise HTTPException(status_code=400, detail="AI融合需要2张图片")
 
-        fused_bytes = film_engine.fuse(over_bytes, under_bytes)
+        file_data = []
+        for f in files:
+            data = await f.read()
+            file_data.append(data)
+
+        fused_bytes = film_engine.fuse(file_data[0], file_data[1], quality=quality, max_dim=max_dim)
 
         os.makedirs(save_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
@@ -190,6 +196,8 @@ async def fuse_images(
             f.write(fused_bytes)
 
         print(f"[SAVE] 融合图像已保存至 {save_path}")
+
+        # Log to DB (fast metrics via background evaluate)
         return Response(content=fused_bytes, media_type="image/jpeg")
 
     except HTTPException:
@@ -269,25 +277,28 @@ async def fuse_multi_images(
 
 @app.post("/api/fuse/ffmef", summary="FFMEF 深度学习融合 (CVPRW 2023)")
 async def fuse_ffmef(
-        over_img: UploadFile = File(...),
-        under_img: UploadFile = File(...)
+        files: List[UploadFile] = File(...),
+        quality: int = Form(95),
+        max_dim: int = Form(1024),
 ):
     try:
         if ffmef_engine is None:
             raise HTTPException(status_code=503, detail="FFMEF engine is not ready")
 
-        over_bytes, over_size = await read_and_validate(over_img, "over image")
-        under_bytes, under_size = await read_and_validate(under_img, "under image")
-        validate_same_size(over_size, under_size)
+        if len(files) != 2:
+            raise HTTPException(status_code=400, detail="FFMEF融合需要2张图片")
+
+        data_list = []
+        for f in files:
+            data_list.append(await f.read())
 
         import torch
 
         model = ffmef_engine["model"]
         device = ffmef_engine["device"]
 
-        # Decode images
-        img1 = cv2.imdecode(np.frombuffer(over_bytes, np.uint8), cv2.IMREAD_COLOR)
-        img2 = cv2.imdecode(np.frombuffer(under_bytes, np.uint8), cv2.IMREAD_COLOR)
+        img1 = cv2.imdecode(np.frombuffer(data_list[0], np.uint8), cv2.IMREAD_COLOR)
+        img2 = cv2.imdecode(np.frombuffer(data_list[1], np.uint8), cv2.IMREAD_COLOR)
 
         if img1 is None or img2 is None:
             raise HTTPException(status_code=400, detail="无法解码图像，请检查文件是否损坏")
@@ -331,17 +342,18 @@ async def fuse_ffmef(
 
 @app.post("/api/fuse/traditional", summary="传统算法集合 (包含平均、最大值、Mertens)")
 async def fuse_traditional(
-        over_img: UploadFile = File(...),
-        under_img: UploadFile = File(...),
-        algo_type: str = Form("avg")
+        files: List[UploadFile] = File(...),
+        algo_type: str = Form("avg"),
+        quality: int = Form(95),
+        max_dim: int = Form(1024),
 ):
     try:
-        over_bytes, over_size = await read_and_validate(over_img, "over image")
-        under_bytes, under_size = await read_and_validate(under_img, "under image")
-        validate_same_size(over_size, under_size)
+        data_list = []
+        for f in files:
+            data_list.append(await f.read())
 
-        img1 = cv2.imdecode(np.frombuffer(over_bytes, np.uint8), cv2.IMREAD_COLOR)
-        img2 = cv2.imdecode(np.frombuffer(under_bytes, np.uint8), cv2.IMREAD_COLOR)
+        img1 = cv2.imdecode(np.frombuffer(data_list[0], np.uint8), cv2.IMREAD_COLOR)
+        img2 = cv2.imdecode(np.frombuffer(data_list[1], np.uint8), cv2.IMREAD_COLOR)
 
         if img1 is None or img2 is None:
             raise HTTPException(status_code=400, detail="无法解码图像，请检查文件是否损坏")
