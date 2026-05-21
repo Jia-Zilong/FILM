@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request
+from fastapi import FastAPI, UploadFile, File, HTTPException, Form, Request, BackgroundTasks
 from fastapi.responses import Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
@@ -40,7 +40,8 @@ def validate_image_payload(data: bytes, field_name: str = "image"):
             size = img.size
             img.verify()
         return size
-    except Exception:
+    except Exception as e:
+        print(f"[DEBUG] validate_image_payload FAILED: {field_name}, error={type(e).__name__}: {e}")
         raise HTTPException(status_code=400, detail=f"{field_name} is not a valid image file")
 
 
@@ -55,10 +56,12 @@ def validate_same_size(size_a, size_b):
         )
 
 
-async def read_and_validate(file: UploadFile, field_name: str = "image"):
+async def read_and_validate(file: UploadFile, field_name: str = "image", strict_content_type: bool = True):
     """读取文件并验证大小"""
-    validate_image(file, field_name)
+    if strict_content_type:
+        validate_image(file, field_name)
     data = await file.read()
+    print(f"[DEBUG] {field_name}: content_type={file.content_type}, size={len(data)} bytes")
     if len(data) > MAX_FILE_SIZE:
         raise HTTPException(
             status_code=400,
@@ -117,6 +120,12 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="多曝光图像融合系统 API", lifespan=lifespan)
+
+# Starlette 0.44.0: use module-level constants (not class attributes)
+import starlette.formparsers
+starlette.formparsers.MAX_PART_SIZE = 50 * 1024 * 1024  # 50MB for form fields
+starlette.formparsers.MAX_FILE_SIZE = 50 * 1024 * 1024  # 50MB for files
+
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -294,38 +303,22 @@ async def fuse_traditional(
 @app.post("/api/evaluate", summary="计算评价指标并存档到数据库")
 async def evaluate_image(
         request: Request,
+        background_tasks: BackgroundTasks,
         image_file: UploadFile = File(...),
         algo: str = Form("AI"),
-        over_img_base64: str = Form(""),
-        under_img_base64: str = Form("")
+        over_img: UploadFile = File(None),
+        under_img: UploadFile = File(None),
 ):
     try:
-        import base64
         from utils.Evaluator import Evaluator
 
-        img_bytes, _ = await read_and_validate(image_file, "evaluation image")
+        img_bytes, _ = await read_and_validate(image_file, "evaluation image", strict_content_type=False)
         pil_img = Image.open(io.BytesIO(img_bytes)).convert('L')
         fused_gray = np.array(pil_img)
         fused_float = fused_gray.astype(np.float32)
 
-        # Default metrics (4 metrics)
+        # Fast metrics (4 metrics) — returned immediately
         metrics_result = ImageMetrics.evaluate(fused_gray)
-
-        # If base64-encoded source images provided, compute VIF and Qabf
-        if over_img_base64 and under_img_base64:
-            over_bytes = base64.b64decode(over_img_base64)
-            under_bytes = base64.b64decode(under_img_base64)
-
-            over_gray = np.array(Image.open(io.BytesIO(over_bytes)).convert('L')).astype(np.float32)
-            under_gray = np.array(Image.open(io.BytesIO(under_bytes)).convert('L')).astype(np.float32)
-
-            vif_val = Evaluator.VIF(fused_float, over_gray, under_gray)
-            qabf_val = Evaluator.Qabf(fused_float, over_gray, under_gray)
-            metrics_result['VIF'] = round(float(vif_val), 4)
-            metrics_result['Qabf'] = round(float(qabf_val), 4)
-        else:
-            metrics_result['VIF'] = None
-            metrics_result['Qabf'] = None
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         filename = f"eval_{timestamp}.jpg"
@@ -337,18 +330,47 @@ async def evaluate_image(
         img_url = str(request.url_for("static", path=filename))
         curr_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        vif_val = metrics_result['VIF'] if metrics_result['VIF'] is not None else 0.0
-        qabf_val = metrics_result['Qabf'] if metrics_result['Qabf'] is not None else 0.0
-
+        # Save initial record (VIF/Qabf = 0, updated by background task)
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT INTO history (algo, img_url, time, en, sd, sf, ag, vif, qabf) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
                   (algo, img_url, curr_time, metrics_result['EN'], metrics_result['SD'], metrics_result['SF'],
-                   metrics_result['AG'], vif_val, qabf_val))
+                   metrics_result['AG'], 0.0, 0.0))
+        record_id = c.lastrowid
         conn.commit()
         conn.close()
 
-        return {"code": 200, "message": "指标计算与存档成功", "data": metrics_result}
+        # Return fast metrics immediately — UI shows fused image + metrics right away
+        result = {"code": 200, "message": "指标计算与存档成功", "data": {
+            **metrics_result,
+            "VIF": None,
+            "Qabf": None,
+        }}
+
+        # Background task: compute VIF/Qabf (expensive) and update DB
+        if over_img and under_img:
+            over_data = await over_img.read()
+            under_data = await under_img.read()
+
+            def _compute_vif_qabf():
+                try:
+                    over_gray = np.array(Image.open(io.BytesIO(over_data)).convert('L')).astype(np.float32)
+                    under_gray = np.array(Image.open(io.BytesIO(under_data)).convert('L')).astype(np.float32)
+                    vif_val = round(float(Evaluator.VIF(fused_float, over_gray, under_gray)), 4)
+                    qabf_val = round(float(Evaluator.Qabf(fused_float, over_gray, under_gray)), 4)
+                    conn = sqlite3.connect(DB_PATH)
+                    c = conn.cursor()
+                    c.execute("UPDATE history SET vif = ?, qabf = ? WHERE id = ?", (vif_val, qabf_val, record_id))
+                    conn.commit()
+                    conn.close()
+                    print(f"[VIF/Qabf] id={record_id}: VIF={vif_val}, Qabf={qabf_val}")
+                except Exception as e:
+                    print(f"[VIF/Qabf ERROR] id={record_id}: {e}")
+                    traceback.print_exc()
+
+            background_tasks.add_task(_compute_vif_qabf)
+
+        return result
 
     except HTTPException:
         raise

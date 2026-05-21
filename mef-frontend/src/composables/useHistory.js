@@ -26,9 +26,9 @@ export function useHistory() {
       ElMessage.warning('暂无数据可导出')
       return
     }
-    let csvContent = "时间,算法,EN(信息熵),SD(标准差),SF(空间频率),AG(平均梯度)\n"
+    let csvContent = "时间,算法,EN(信息熵),SD(标准差),SF(空间频率),AG(平均梯度),VIF,Qabf\n"
     historyList.value.forEach(item => {
-      const row = `${item.time},${item.algo || '未知'},${item.metrics.EN},${item.metrics.SD},${item.metrics.SF},${item.metrics.AG}\n`
+      const row = `${item.time},${item.algo || '未知'},${item.metrics.EN},${item.metrics.SD},${item.metrics.SF},${item.metrics.AG},${item.metrics.VIF ?? '--'},${item.metrics.Qabf ?? '--'}\n`
       csvContent += row
     })
     const blob = new Blob(["﻿" + csvContent], { type: 'text/csv;charset=utf-8;' })

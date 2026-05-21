@@ -8,6 +8,14 @@ const props = defineProps({
   fusedImageUrl: { type: String, default: '' }
 })
 
+const downloadImage = () => {
+  if (!props.fusedImageUrl) return
+  const a = document.createElement('a')
+  a.href = props.fusedImageUrl
+  a.download = `fused_${Date.now()}.jpg`
+  a.click()
+}
+
 const chartRef = ref(null)
 const barChartRef = ref(null)
 let radarChart = null
@@ -135,8 +143,9 @@ onBeforeUnmount(() => {
 
 <template>
   <Transition name="slide-up">
-    <div v-if="metrics" class="metrics-bar">
-      <div class="metrics-values">
+    <div v-if="fusedImageUrl" class="metrics-bar">
+      <!-- Metrics values section: only when metrics exist -->
+      <div v-if="metrics" class="metrics-values">
         <div class="metric-row" v-for="m in [
           { label: 'EN', value: metrics.EN.toFixed(4) },
           { label: 'SD', value: metrics.SD.toFixed(4) },
@@ -150,23 +159,29 @@ onBeforeUnmount(() => {
         </div>
       </div>
 
-      <div class="chart-section">
+      <!-- Charts: only when metrics exist -->
+      <div v-if="metrics" class="chart-section">
         <div ref="chartRef" class="radar-chart"></div>
       </div>
 
-      <div class="chart-section flex-grow">
+      <div v-if="metrics" class="chart-section flex-grow">
         <div ref="barChartRef" class="bar-chart"></div>
       </div>
 
+      <!-- Perf info + download: always visible when fused image exists -->
       <div class="perf-info">
-        <span class="perf-item">
+        <span class="perf-item" v-if="fusionTime">
           <span class="perf-label">耗时</span>
-          <span class="perf-value">{{ fusionTime ? fusionTime + 'ms' : '--' }}</span>
+          <span class="perf-value">{{ fusionTime }}ms</span>
         </span>
         <span class="perf-item">
           <span class="perf-label">尺寸</span>
           <span class="perf-value">{{ imageWidth }}×{{ imageHeight }}</span>
         </span>
+        <button class="download-btn" @click="downloadImage">
+          <span class="dl-icon">⬇</span>
+          <span class="dl-text">下载融合图</span>
+        </button>
       </div>
     </div>
   </Transition>
@@ -255,6 +270,36 @@ onBeforeUnmount(() => {
   font-family: var(--font-mono);
   font-weight: 600;
   color: var(--color-text);
+}
+
+.download-btn {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
+  color: #fff;
+  border: none;
+  border-radius: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 2px 8px rgba(37, 99, 235, 0.2);
+}
+
+.download-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(37, 99, 235, 0.3);
+}
+
+.download-btn:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.dl-icon {
+  font-size: 14px;
 }
 
 .slide-up-enter-active {

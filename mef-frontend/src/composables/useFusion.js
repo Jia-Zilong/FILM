@@ -34,18 +34,6 @@ export function useFusion() {
     if (fusedImageUrl.value) URL.revokeObjectURL(fusedImageUrl.value)
   }
 
-  const fileToBase64 = (file) => {
-    return new Promise((resolve) => {
-      const reader = new FileReader()
-      reader.onload = () => {
-        // Remove data:image/jpeg;base64, prefix
-        const base64 = reader.result.split(',')[1]
-        resolve(base64)
-      }
-      reader.readAsDataURL(file)
-    })
-  }
-
   const startFusion = async () => {
     if (!overFile.value || !underFile.value) {
       ElMessage.warning('请先上传源图像')
@@ -75,19 +63,14 @@ export function useFusion() {
         : `${API_BASE}/api/fuse/traditional`
 
       const fuseRes = await axios.post(endpoint, formData, { responseType: 'blob' })
-      const imgBlob = new Blob([fuseRes.data], { type: 'image/jpeg' })
-      fusedImageUrl.value = URL.createObjectURL(imgBlob)
-
-      // Convert source images to base64 for VIF/Qabf computation
-      const [overB64, underB64] = await Promise.all([
-        fileToBase64(overFile.value),
-        fileToBase64(underFile.value)
-      ])
+      // Use File instead of Blob for reliable multipart upload
+      const imgFile = new File([fuseRes.data], 'res.jpg', { type: 'image/jpeg' })
+      fusedImageUrl.value = URL.createObjectURL(imgFile)
 
       const evalFormData = new FormData()
-      evalFormData.append('image_file', imgBlob, 'res.jpg')
-      evalFormData.append('over_img_base64', overB64)
-      evalFormData.append('under_img_base64', underB64)
+      evalFormData.append('image_file', imgFile)
+      evalFormData.append('over_img', overFile.value)
+      evalFormData.append('under_img', underFile.value)
       const algoNameMap = {
         'ai': 'IF-FILM(深度学习)',
         'ffmef': 'FFMEF(深度学习)',
@@ -97,14 +80,40 @@ export function useFusion() {
       }
       evalFormData.append('algo', algoNameMap[selectedAlgo.value])
 
-      const evalRes = await axios.post(`${API_BASE}/api/evaluate`, evalFormData)
-      if (evalRes.data.code === 200) {
-        metrics.value = evalRes.data.data
-        const elapsed = Math.round(performance.now() - startTime)
-        fusionTime.value = elapsed
-        ElMessage.success('融合及数据库存档成功')
-        return true
+      // Use native fetch for reliable multipart FormData serialization
+      const evalRes = await fetch(`${API_BASE}/api/evaluate`, {
+        method: 'POST',
+        body: evalFormData
+      })
+      if (evalRes.ok) {
+        const evalData = await evalRes.json()
+        if (evalData.code === 200) {
+          metrics.value = evalData.data
+        }
       }
+      const elapsed = Math.round(performance.now() - startTime)
+      fusionTime.value = elapsed
+      ElMessage.success('融合成功')
+
+      // Poll history for VIF/Qabf (computed in background)
+      let pollCount = 0
+      const pollInterval = setInterval(async () => {
+        pollCount++
+        if (pollCount > 40) { clearInterval(pollInterval); return } // timeout after 20s
+        try {
+          const res = await fetch(`${API_BASE}/api/history`)
+          const data = await res.json()
+          if (data.code === 200 && data.data.length > 0) {
+            const latest = data.data[0]
+            if (latest.metrics.VIF && latest.metrics.VIF > 0) {
+              metrics.value = { ...metrics.value, VIF: latest.metrics.VIF, Qabf: latest.metrics.Qabf }
+              clearInterval(pollInterval)
+            }
+          }
+        } catch {}
+      }, 500)
+
+      return true
     } catch (e) {
       ElMessage.error('后端服务未响应')
       return false
