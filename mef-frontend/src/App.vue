@@ -8,12 +8,12 @@ import MetricsDashboard from './components/MetricsDashboard.vue'
 import HistoryDrawer from './components/HistoryDrawer.vue'
 import ParamPanel from './components/ParamPanel.vue'
 import AlgorithmInfo from './components/AlgorithmInfo.vue'
+import ComparisonView from './components/ComparisonView.vue'
 import { useFusion } from './composables/useFusion'
 
 const {
   imageFiles, previews, isFusing, fusedImageUrl, metrics,
   selectedAlgo, fusionTime, quality, maxDim, selectedMetrics,
-  isComparing, startComparison,
   setImageFiles, clearPreviews, startFusion,
 } = useFusion()
 
@@ -139,20 +139,9 @@ onBeforeUnmount(clearPreviews)
               v-model:quality="quality"
               v-model:max-dim="maxDim"
             />
-            <el-button
-              type="primary"
-              size="large"
-              :loading="isComparing"
-              @click="startComparison"
-              :disabled="imageFiles.length < 2"
-            >
-              {{ isComparing ? '对比中...' : '运行全部算法对比' }}
-            </el-button>
           </div>
         </section>
-        <div class="comparison-placeholder">
-          <p>对比功能将在下一步添加</p>
-        </div>
+        <ComparisonView />
       </div>
     </main>
 
@@ -348,20 +337,6 @@ onBeforeUnmount(clearPreviews)
   display: flex;
   gap: 12px;
   align-items: flex-start;
-}
-
-/* Comparison placeholder */
-.comparison-placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 300px;
-  background: var(--color-glass);
-  backdrop-filter: blur(12px);
-  border: 1px solid var(--color-glass-border);
-  border-radius: 12px;
-  color: var(--color-text-tertiary);
-  font-size: 14px;
 }
 
 /* ===== Responsive ===== */
