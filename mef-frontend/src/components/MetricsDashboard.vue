@@ -10,24 +10,16 @@ const props = defineProps({
   fusedImageUrl: { type: String, default: '' },
   selectedMetrics: { type: Array, default: () => ['EN', 'SD', 'SF', 'AG', 'VIF', 'Qabf'] },
 })
+const emit = defineEmits(['update:selectedMetrics'])
 
-const localSelected = ref([...ALL_METRICS])
-
-const effectiveMetrics = computed(() => {
-  // Use prop if provided, otherwise use local state
-  const sel = props.selectedMetrics && props.selectedMetrics.length > 0
-    ? props.selectedMetrics
-    : localSelected.value
-  return sel
-})
+const effectiveMetrics = computed(() => props.selectedMetrics)
 
 const toggleMetric = (m) => {
-  const idx = localSelected.value.indexOf(m)
-  if (idx >= 0) {
-    localSelected.value.splice(idx, 1)
-  } else {
-    localSelected.value.push(m)
-  }
+  const arr = [...effectiveMetrics.value]
+  const idx = arr.indexOf(m)
+  if (idx >= 0) arr.splice(idx, 1)
+  else arr.push(m)
+  emit('update:selectedMetrics', arr)
 }
 
 const downloadImage = () => {

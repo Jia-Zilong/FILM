@@ -4,7 +4,13 @@ import * as echarts from 'echarts'
 import { algorithms } from '../data/algorithms.js'
 import { useFusion } from '../composables/useFusion'
 
-const { comparisonResults, isComparing, startComparison, imageFiles, quality, maxDim } = useFusion()
+const props = defineProps({
+  imageFiles: { type: Array, default: () => [] },
+  quality: { type: Number, default: 95 },
+  maxDim: { type: Number, default: 1024 },
+})
+
+const { comparisonResults, isComparing, startComparison } = useFusion()
 
 const ALGO_COLORS = {
   ai: '#2563EB',
@@ -52,7 +58,7 @@ function fmt(val) {
 }
 
 async function handleRun() {
-  await startComparison(imageFiles.value, quality.value, maxDim.value)
+  await startComparison(props.imageFiles, props.quality, props.maxDim)
 }
 
 const hasResults = computed(() => comparisonResults.value && comparisonResults.value.length > 0)
@@ -198,7 +204,7 @@ function fmtMetric(result, key) {
         type="primary"
         size="large"
         :loading="isComparing"
-        :disabled="imageFiles.length < 2"
+        :disabled="props.imageFiles.length < 2"
         @click="handleRun"
       >
         {{ isComparing ? '对比中...' : '运行全部算法' }}

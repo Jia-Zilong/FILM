@@ -114,10 +114,10 @@ onBeforeUnmount(clearPreviews)
             v-model:max-dim="maxDim"
           />
           <MetricsDashboard
+            v-model:selected-metrics="selectedMetrics"
             :metrics="metrics"
             :fusion-time="fusionTime"
             :fused-image-url="fusedImageUrl"
-            :selected-metrics="selectedMetrics"
           />
         </div>
 
@@ -152,7 +152,11 @@ onBeforeUnmount(clearPreviews)
             />
           </div>
         </section>
-        <ComparisonView />
+        <ComparisonView
+          :image-files="imageFiles"
+          :quality="quality"
+          :max-dim="maxDim"
+        />
       </div>
     </main>
 

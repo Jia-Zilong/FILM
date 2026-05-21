@@ -1,5 +1,5 @@
 <script setup>
-import { ref, computed, onBeforeUnmount } from 'vue'
+import { ref, computed, watch, onMounted, onBeforeUnmount } from 'vue'
 import { ElMessage } from 'element-plus'
 
 const props = defineProps({
@@ -14,6 +14,14 @@ const isDragging = ref(false)
 
 const canAdd = computed(() => props.modelValue.length < props.maxCount)
 const canRemove = computed(() => props.modelValue.length > props.minCount)
+
+// Sync previews when modelValue changes from outside (e.g., view mode switch)
+const syncPreviews = () => {
+  previews.value.forEach((url) => { if (url) URL.revokeObjectURL(url) })
+  previews.value = props.modelValue.map((f) => URL.createObjectURL(f))
+}
+watch(() => props.modelValue.length, syncPreviews)
+onMounted(syncPreviews)
 
 const handleFiles = (files) => {
   const fileArray = Array.isArray(files) ? files : [files]
