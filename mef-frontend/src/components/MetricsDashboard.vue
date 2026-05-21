@@ -8,7 +8,7 @@ const props = defineProps({
   metrics: { type: Object, default: null },
   fusionTime: { type: Number, default: null },
   fusedImageUrl: { type: String, default: '' },
-  selectedMetrics: { type: Array, default: () => [...ALL_METRICS] },
+  selectedMetrics: { type: Array, default: () => ['EN', 'SD', 'SF', 'AG', 'VIF', 'Qabf'] },
 })
 
 const localSelected = ref([...ALL_METRICS])
