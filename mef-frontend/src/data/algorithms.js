@@ -27,7 +27,7 @@ export const algorithms = {
       title: 'FFMEF: Unsupervised Multi-Exposure Image Fusion via Deep Learning',
       venue: 'CVPR Workshop 2023',
       year: 2023,
-      link: 'https://openaccess.thecvf.com/content/CVPR2023W/...',
+      link: null, // CVPR Workshop 2023 — stable URL TBD
     },
   },
   avg: {
