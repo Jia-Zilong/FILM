@@ -20,8 +20,10 @@ const {
 const showHistory = ref(false)
 const imageListRef = ref(null)
 const viewMode = ref('fusion')
+const showAlgoInfo = ref(false)
 
 const handleFuse = async () => {
+  showAlgoInfo.value = false
   await startFusion()
 }
 
@@ -79,7 +81,7 @@ onBeforeUnmount(clearPreviews)
           </div>
         </section>
 
-        <!-- Middle: image previews + algorithm info -->
+        <!-- Middle: image previews (2 columns) -->
         <section class="image-area">
           <div class="source-col">
             <div class="source-label">源图像 ({{ previews.length }}张)</div>
@@ -103,10 +105,6 @@ onBeforeUnmount(clearPreviews)
               :is-fusing="isFusing"
             />
           </div>
-          <!-- Algorithm info sidebar -->
-          <div v-if="fusedImageUrl && !isFusing" class="algo-info-col">
-            <AlgorithmInfo :algo="selectedAlgo" />
-          </div>
         </section>
 
         <!-- Bottom: parameters + metrics -->
@@ -121,6 +119,19 @@ onBeforeUnmount(clearPreviews)
             :fused-image-url="fusedImageUrl"
             :selected-metrics="selectedMetrics"
           />
+        </div>
+
+        <!-- Collapsible Algorithm Info -->
+        <div v-if="fusedImageUrl && !isFusing" class="algo-info-collapsible">
+          <button class="algo-info-toggle" @click="showAlgoInfo = !showAlgoInfo">
+            <span>{{ showAlgoInfo ? '收起' : '展开' }}算法说明</span>
+            <span class="toggle-arrow" :class="{ open: showAlgoInfo }">&#9660;</span>
+          </button>
+          <Transition name="slide-up">
+            <div v-if="showAlgoInfo" class="algo-info-content">
+              <AlgorithmInfo :algo="selectedAlgo" />
+            </div>
+          </Transition>
         </div>
       </div>
     </main>
@@ -158,7 +169,7 @@ onBeforeUnmount(clearPreviews)
 
 .app-main {
   flex: 1;
-  padding: 12px;
+  padding: 8px;
   display: flex;
   justify-content: center;
 }
@@ -168,7 +179,7 @@ onBeforeUnmount(clearPreviews)
   max-width: 1600px;
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 10px;
 }
 
 /* View toggle */
@@ -202,8 +213,8 @@ onBeforeUnmount(clearPreviews)
 .top-bar {
   display: flex;
   align-items: stretch;
-  gap: 12px;
-  padding: 12px;
+  gap: 10px;
+  padding: 8px;
   background: var(--color-glass);
   backdrop-filter: blur(12px);
   border: 1px solid var(--color-glass-border);
@@ -215,7 +226,7 @@ onBeforeUnmount(clearPreviews)
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
   min-width: 0;
 }
 
@@ -226,7 +237,7 @@ onBeforeUnmount(clearPreviews)
 
 .fuse-button {
   flex: 1;
-  height: 38px;
+  height: 36px;
   font-size: 13px;
   font-weight: 600;
   border-radius: 8px;
@@ -246,7 +257,7 @@ onBeforeUnmount(clearPreviews)
 }
 
 .clear-button {
-  height: 38px;
+  height: 36px;
   min-width: 70px;
   border-radius: 8px;
   font-size: 13px;
@@ -264,11 +275,11 @@ onBeforeUnmount(clearPreviews)
 /* ===== Image Area ===== */
 .image-area {
   display: grid;
-  grid-template-columns: 1.2fr 1.5fr auto;
-  gap: 12px;
-  height: 50vh;
-  min-height: 260px;
-  max-height: 580px;
+  grid-template-columns: 1.2fr 1.5fr;
+  gap: 10px;
+  height: 40vh;
+  min-height: 220px;
+  max-height: 480px;
 }
 
 .source-col {
@@ -284,10 +295,9 @@ onBeforeUnmount(clearPreviews)
 }
 
 .source-grid {
-  flex: 1;
-  display: flex;
-  flex-wrap: wrap;
-  gap: 6px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, 80px);
+  gap: 4px;
   align-content: flex-start;
   overflow-y: auto;
 }
@@ -298,23 +308,25 @@ onBeforeUnmount(clearPreviews)
   gap: 2px;
   background: var(--color-bg-subtle);
   border: 1px solid var(--color-border);
-  border-radius: 8px;
+  border-radius: 6px;
   overflow: hidden;
-  min-width: 0;
+  width: 80px;
+  height: 68px;
 }
 
 .img-container .thumb-label {
   font-size: 9px;
   font-weight: 600;
   color: var(--color-text-tertiary);
-  padding: 2px 6px;
+  padding: 1px 6px;
   background: var(--color-glass);
+  line-height: 1;
 }
 
 .img-container img {
-  max-width: 100%;
-  max-height: 200px;
-  object-fit: contain;
+  width: 80px;
+  height: 54px;
+  object-fit: cover;
   display: block;
 }
 
@@ -324,32 +336,64 @@ onBeforeUnmount(clearPreviews)
   gap: 6px;
 }
 
-.algo-info-col {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  align-self: flex-start;
-  padding-top: 20px;
-}
-
 /* ===== Bottom Area ===== */
 .bottom-area {
+  display: grid;
+  grid-template-columns: 200px 1fr;
+  gap: 10px;
+  align-items: start;
+}
+
+/* ===== Collapsible Algorithm Info ===== */
+.algo-info-collapsible {
+  background: var(--color-glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid var(--color-glass-border);
+  border-radius: var(--radius-md);
+  overflow: hidden;
+}
+
+.algo-info-toggle {
   display: flex;
-  gap: 12px;
-  align-items: flex-start;
+  align-items: center;
+  justify-content: space-between;
+  width: 100%;
+  padding: 6px 12px;
+  background: transparent;
+  border: none;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--color-text-secondary);
+  transition: var(--transition-smooth);
+}
+
+.algo-info-toggle:hover {
+  color: var(--color-primary);
+  background: var(--color-primary-light);
+}
+
+.toggle-arrow {
+  font-size: 10px;
+  transition: transform 0.2s;
+}
+
+.toggle-arrow.open {
+  transform: rotate(180deg);
+}
+
+.algo-info-content {
+  padding: 8px 12px 12px;
 }
 
 /* ===== Responsive ===== */
 @media (max-width: 1199px) {
   .image-area {
     grid-template-columns: 1fr 1fr;
-    min-height: 260px;
+    min-height: 220px;
   }
-  .result-col {
-    grid-column: 1 / -1;
-  }
-  .algo-info-col {
-    display: none;
+  .bottom-area {
+    grid-template-columns: 1fr;
   }
 }
 

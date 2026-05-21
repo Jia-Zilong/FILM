@@ -201,10 +201,8 @@ onBeforeUnmount(() => {
       <!-- Metric values -->
       <div v-if="metrics" class="metrics-values">
         <div
-          class="metric-row"
-          v-for="m in ALL_METRICS"
-          :key="'v-' + m"
-          v-show="effectiveMetrics.includes(m)"
+          v-for="m in effectiveMetrics"
+          :key="m"
         >
           <span class="metric-label">{{ m }}</span>
           <span class="metric-value">{{ getMetricValue(m) }}</span>
