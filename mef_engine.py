@@ -52,16 +52,15 @@ class MEFFusionEngine:
         self.transform = transforms.ToTensor()
         print("MEF 引擎完全就绪！")
 
-    def fuse(self, over_bytes: bytes, under_bytes: bytes) -> bytes:
+    def fuse(self, over_bytes: bytes, under_bytes: bytes, quality: int = 95, max_dim: int = 1024) -> bytes:
         # 1. 读取并直接转换为 YCbCr 格式
         img_over_rgb = Image.open(io.BytesIO(over_bytes)).convert('RGB')
         img_under_rgb = Image.open(io.BytesIO(under_bytes)).convert('RGB')
 
         # 2. 自动缩放超大图片，防止 GPU 显存溢出
-        MAX_DIM = 1024
         w, h = img_over_rgb.size
-        if w > MAX_DIM or h > MAX_DIM:
-            scale = MAX_DIM / max(w, h)
+        if w > max_dim or h > max_dim:
+            scale = max_dim / max(w, h)
             new_w, new_h = int(w * scale), int(h * scale)
             # 确保宽高为偶数（避免后续下采样/reshape问题）
             new_w = new_w if new_w % 2 == 0 else new_w - 1
@@ -101,7 +100,7 @@ class MEFFusionEngine:
         fused_rgb = fused_ycbcr.convert('RGB')
 
         output_buffer = io.BytesIO()
-        fused_rgb.save(output_buffer, format="JPEG")
+        fused_rgb.save(output_buffer, format="JPEG", quality=quality)
         return output_buffer.getvalue()
 
     def fuse_multi(self, image_bytes_list: list[bytes], quality: int = 95, max_dim: int = 1024) -> bytes:
@@ -113,12 +112,12 @@ class MEFFusionEngine:
         if len(image_bytes_list) < 2:
             raise ValueError("At least 2 images required for fusion")
         if len(image_bytes_list) == 2:
-            return self.fuse(image_bytes_list[0], image_bytes_list[1])
+            return self.fuse(image_bytes_list[0], image_bytes_list[1], quality=quality, max_dim=max_dim)
 
         # Pairwise iteration
         current = image_bytes_list[0]
         for i in range(1, len(image_bytes_list)):
-            current = self.fuse(current, image_bytes_list[i])
+            current = self.fuse(current, image_bytes_list[i], quality=quality, max_dim=max_dim)
             print(f"[fuse_multi] Pairwise step {i}/{len(image_bytes_list) - 1} done")
 
         return current
