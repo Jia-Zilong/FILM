@@ -103,3 +103,22 @@ class MEFFusionEngine:
         output_buffer = io.BytesIO()
         fused_rgb.save(output_buffer, format="JPEG")
         return output_buffer.getvalue()
+
+    def fuse_multi(self, image_bytes_list: list[bytes], quality: int = 95, max_dim: int = 1024) -> bytes:
+        """
+        Pairwise iterative fusion for N>2 images.
+        Fuses [img1 + img2] -> fused12, then [fused12 + img3] -> fused123, etc.
+        All in YCbCr space through the existing pipeline.
+        """
+        if len(image_bytes_list) < 2:
+            raise ValueError("At least 2 images required for fusion")
+        if len(image_bytes_list) == 2:
+            return self.fuse(image_bytes_list[0], image_bytes_list[1])
+
+        # Pairwise iteration
+        current = image_bytes_list[0]
+        for i in range(1, len(image_bytes_list)):
+            current = self.fuse(current, image_bytes_list[i])
+            print(f"[fuse_multi] Pairwise step {i}/{len(image_bytes_list) - 1} done")
+
+        return current

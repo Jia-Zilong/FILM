@@ -199,6 +199,73 @@ async def fuse_images(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/fuse-multi", summary="多图融合 (2-10张)")
+async def fuse_multi_images(
+        files: list[UploadFile] = File(...),
+        algo_type: str = Form("ai"),
+        quality: int = Form(95),
+        max_dim: int = Form(1024),
+):
+    try:
+        if len(files) < 2:
+            raise HTTPException(status_code=400, detail="至少需要 2 张图片")
+        if len(files) > 10:
+            raise HTTPException(status_code=400, detail="最多支持 10 张图片")
+
+        # Validate all files
+        data_list = []
+        sizes = []
+        for i, f in enumerate(files):
+            validate_image(f, f"image_{i}")
+            data = await f.read()
+            if len(data) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=400, detail=f"image_{i} 文件过大")
+            data_list.append(data)
+            sizes.append(validate_image_payload(data, f"image_{i}"))
+
+        # Check all same size
+        if not all(s == sizes[0] for s in sizes):
+            raise HTTPException(status_code=400, detail="所有输入图像必须尺寸一致")
+
+        if film_engine is None:
+            raise HTTPException(status_code=503, detail="FILM Fusion engine is not ready")
+
+        if algo_type in ("avg", "max", "mertens"):
+            # Traditional: pairwise with opencv
+            result = cv2.imdecode(np.frombuffer(data_list[0], np.uint8), cv2.IMREAD_COLOR)
+            for i in range(1, len(data_list)):
+                img = cv2.imdecode(np.frombuffer(data_list[i], np.uint8), cv2.IMREAD_COLOR)
+                if algo_type == "avg":
+                    result = cv2.addWeighted(result, 0.5, img, 0.5, 0)
+                elif algo_type == "max":
+                    result = cv2.max(result, img)
+                elif algo_type == "mertens":
+                    result = cv2.addWeighted(result, 0.5, img, 0.5, 0)
+            _, buffer = cv2.imencode('.jpg', result, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
+            return Response(content=buffer.tobytes(), media_type="image/jpeg")
+
+        # AI/FFMEF: use engine's pairwise fusion
+        fused_bytes = film_engine.fuse_multi(data_list, quality=quality, max_dim=max_dim)
+
+        os.makedirs(save_dir, exist_ok=True)
+        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+        save_filename = f"fused_multi_{timestamp}.jpg"
+        save_path = save_dir / save_filename
+
+        with open(save_path, "wb") as f:
+            f.write(fused_bytes)
+
+        print(f"[SAVE] 多图融合已保存至 {save_path}")
+        return Response(content=fused_bytes, media_type="image/jpeg")
+
+    except HTTPException:
+        raise
+    except Exception as e:
+        print("[ERROR] 多图融合发生错误：")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.post("/api/fuse/ffmef", summary="FFMEF 深度学习融合 (CVPRW 2023)")
 async def fuse_ffmef(
         over_img: UploadFile = File(...),
@@ -308,6 +375,7 @@ async def evaluate_image(
         algo: str = Form("AI"),
         over_img: UploadFile = File(None),
         under_img: UploadFile = File(None),
+        metrics: str = Form(None),  # NEW: comma-separated metric names
 ):
     try:
         from utils.Evaluator import Evaluator
@@ -317,8 +385,26 @@ async def evaluate_image(
         fused_gray = np.array(pil_img)
         fused_float = fused_gray.astype(np.float32)
 
-        # Fast metrics (4 metrics) — returned immediately
-        metrics_result = ImageMetrics.evaluate(fused_gray)
+        # Parse selected metrics
+        if metrics:
+            selected = [m.strip().upper() for m in metrics.split(',')]
+        else:
+            selected = ['EN', 'SD', 'SF', 'AG', 'VIF', 'Qabf']  # default: all
+
+        # Fast metrics: only compute selected ones that are EN/SD/SF/AG
+        fast_selected = [m for m in selected if m in ('EN', 'SD', 'SF', 'AG')]
+        slow_selected = [m for m in selected if m in ('VIF', 'Qabf')]
+
+        if fast_selected:
+            full_result = ImageMetrics.evaluate(fused_gray)
+            metrics_result = {k: v for k, v in full_result.items() if k in fast_selected}
+        else:
+            metrics_result = {}
+
+        # Pad uncomputed fast metrics with None
+        for m in fast_selected:
+            if m not in metrics_result:
+                metrics_result[m] = None
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         filename = f"eval_{timestamp}.jpg"
@@ -330,25 +416,32 @@ async def evaluate_image(
         img_url = str(request.url_for("static", path=filename))
         curr_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-        # Save initial record (VIF/Qabf = 0, updated by background task)
+        # Save initial record
         conn = sqlite3.connect(DB_PATH)
         c = conn.cursor()
         c.execute("INSERT INTO history (algo, img_url, time, en, sd, sf, ag, vif, qabf) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
-                  (algo, img_url, curr_time, metrics_result['EN'], metrics_result['SD'], metrics_result['SF'],
-                   metrics_result['AG'], 0.0, 0.0))
+                  (algo, img_url, curr_time,
+                   metrics_result.get('EN', 0) or 0.0,
+                   metrics_result.get('SD', 0) or 0.0,
+                   metrics_result.get('SF', 0) or 0.0,
+                   metrics_result.get('AG', 0) or 0.0,
+                   0.0, 0.0))
         record_id = c.lastrowid
         conn.commit()
         conn.close()
 
-        # Return fast metrics immediately — UI shows fused image + metrics right away
-        result = {"code": 200, "message": "指标计算与存档成功", "data": {
-            **metrics_result,
-            "VIF": None,
-            "Qabf": None,
-        }}
+        # Build response: only include selected metrics
+        result_data = {}
+        for m in selected:
+            if m in metrics_result and metrics_result[m] is not None:
+                result_data[m] = metrics_result[m]
+            else:
+                result_data[m] = None
 
-        # Background task: compute VIF/Qabf (expensive) and update DB
-        if over_img and under_img:
+        result = {"code": 200, "message": "指标计算与存档成功", "data": result_data}
+
+        # Background task: compute VIF/Qabf if selected and source images provided
+        if slow_selected and over_img and under_img:
             over_data = await over_img.read()
             under_data = await under_img.read()
 
@@ -356,8 +449,14 @@ async def evaluate_image(
                 try:
                     over_gray = np.array(Image.open(io.BytesIO(over_data)).convert('L')).astype(np.float32)
                     under_gray = np.array(Image.open(io.BytesIO(under_data)).convert('L')).astype(np.float32)
-                    vif_val = round(float(Evaluator.VIF(fused_float, over_gray, under_gray)), 4)
-                    qabf_val = round(float(Evaluator.Qabf(fused_float, over_gray, under_gray)), 4)
+                    if 'VIF' in slow_selected:
+                        vif_val = round(float(Evaluator.VIF(fused_float, over_gray, under_gray)), 4)
+                    else:
+                        vif_val = 0.0
+                    if 'Qabf' in slow_selected:
+                        qabf_val = round(float(Evaluator.Qabf(fused_float, over_gray, under_gray)), 4)
+                    else:
+                        qabf_val = 0.0
                     conn = sqlite3.connect(DB_PATH)
                     c = conn.cursor()
                     c.execute("UPDATE history SET vif = ?, qabf = ? WHERE id = ?", (vif_val, qabf_val, record_id))
