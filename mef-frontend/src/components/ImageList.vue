@@ -10,6 +10,7 @@ const props = defineProps({
 const emit = defineEmits(['update:modelValue'])
 
 const previews = ref([])
+const isDragging = ref(false)
 
 const canAdd = computed(() => props.modelValue.length < props.maxCount)
 const canRemove = computed(() => props.modelValue.length > props.minCount)
@@ -28,15 +29,23 @@ const handleFiles = (files) => {
   const oldPreviews = [...previews.value]
   const newFiles = []
   const newPreviews = []
+  let rejectedCount = 0
 
   for (const url of oldPreviews) {
     URL.revokeObjectURL(url)
   }
 
   for (const file of [...props.modelValue, ...toAdd]) {
-    if (!file.type.startsWith('image/')) continue
+    if (!file.type.startsWith('image/')) {
+      rejectedCount++
+      continue
+    }
     newFiles.push(file)
     newPreviews.push(URL.createObjectURL(file))
+  }
+
+  if (rejectedCount > 0) {
+    ElMessage.error(`${rejectedCount} 个非图片文件已跳过`)
   }
 
   if (newFiles.length > props.modelValue.length) {
@@ -53,8 +62,21 @@ const onFileChange = (e) => {
 
 const onDrop = (e) => {
   e.preventDefault()
+  isDragging.value = false
   const files = Array.from(e.dataTransfer.files || [])
   if (files.length) handleFiles(files)
+}
+
+const onDragOver = (e) => {
+  e.preventDefault()
+  isDragging.value = true
+}
+
+const onDragLeave = (e) => {
+  // Only reset if we actually left the container (not entering a child)
+  if (!e.currentTarget.contains(e.relatedTarget)) {
+    isDragging.value = false
+  }
 }
 
 const removeImage = (index) => {
@@ -83,7 +105,8 @@ defineExpose({ clearAll })
 </script>
 
 <template>
-  <div class="image-list" @drop.prevent="onDrop" @dragover.prevent>
+  <div class="image-list" :class="{ 'is-dragging': isDragging }"
+       @drop.prevent="onDrop" @dragover.prevent="onDragOver" @dragleave.prevent="onDragLeave">
     <div class="image-grid">
       <div
         v-for="(file, index) in modelValue"
@@ -129,6 +152,13 @@ defineExpose({ clearAll })
 <style scoped>
 .image-list {
   width: 100%;
+}
+
+.image-list.is-dragging .image-grid {
+  outline: 2px dashed var(--color-primary);
+  outline-offset: 4px;
+  border-radius: 8px;
+  background: var(--color-primary-light);
 }
 
 .image-grid {
