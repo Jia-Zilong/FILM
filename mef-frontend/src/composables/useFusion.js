@@ -155,8 +155,12 @@ export function useFusion() {
   const comparisonResults = ref(null)
   const isComparing = ref(false)
 
-  const startComparison = async () => {
-    if (imageFiles.value.length < 2) {
+  const startComparison = async (files, q, md) => {
+    const srcFiles = files && files.length > 0 ? files : imageFiles.value
+    const qVal = q !== undefined ? q : quality.value
+    const mdVal = md !== undefined ? md : maxDim.value
+
+    if (srcFiles.length < 2) {
       ElMessage.warning('请至少上传 2 张源图像')
       return false
     }
@@ -166,12 +170,12 @@ export function useFusion() {
 
     try {
       const formData = new FormData()
-      for (const file of imageFiles.value) {
+      for (const file of srcFiles) {
         formData.append('files', file)
       }
       formData.append('algorithms', 'ai,ffmef,avg,max,mertens')
-      formData.append('quality', quality.value)
-      formData.append('max_dim', maxDim.value)
+      formData.append('quality', qVal)
+      formData.append('max_dim', mdVal)
 
       const res = await fetch(`${API_BASE}/api/fuse/compare`, {
         method: 'POST',
@@ -181,13 +185,23 @@ export function useFusion() {
         const data = await res.json()
         if (data.code === 200) {
           comparisonResults.value = data.data
+        } else {
+          const errText = await res.text()
+          console.error('API error:', errText)
+          ElMessage.error('对比请求失败: ' + (data?.detail || errText))
         }
+      } else {
+        const errText = await res.text()
+        console.error('HTTP error:', res.status, errText)
+        ElMessage.error(`HTTP ${res.status}: ${errText}`)
       }
-      ElMessage.success('对比完成')
+      if (comparisonResults.value && comparisonResults.value.length > 0) {
+        ElMessage.success('对比完成')
+      }
       return true
     } catch (e) {
-      console.error(e)
-      ElMessage.error('对比失败')
+      console.error('对比请求异常:', e)
+      ElMessage.error('对比失败: ' + (e.message || '未知错误'))
       return false
     } finally {
       isComparing.value = false

@@ -185,8 +185,9 @@ onBeforeUnmount(() => {
 <template>
   <Transition name="slide-up">
     <div v-if="fusedImageUrl" class="metrics-bar">
-      <!-- Metric selection checkboxes -->
+      <!-- Metric selection checkboxes with header -->
       <div class="metric-toggles">
+        <div class="toggle-header">指标</div>
         <label
           v-for="m in ALL_METRICS"
           :key="m"
@@ -194,7 +195,8 @@ onBeforeUnmount(() => {
           :class="{ active: effectiveMetrics.includes(m) }"
         >
           <input type="checkbox" :checked="effectiveMetrics.includes(m)" @change="toggleMetric(m)" />
-          <span>{{ m }}</span>
+          <span class="toggle-check">{{ effectiveMetrics.includes(m) ? '✓' : '' }}</span>
+          <span class="toggle-label">{{ m }}</span>
         </label>
       </div>
 
@@ -253,28 +255,70 @@ onBeforeUnmount(() => {
 .metric-toggles {
   display: flex;
   flex-direction: column;
-  gap: 3px;
-  min-width: 60px;
+  gap: 2px;
+  min-width: 72px;
   flex-shrink: 0;
-  justify-content: center;
+  justify-content: flex-start;
+  padding-top: 4px;
+}
+
+.toggle-header {
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--color-text-secondary);
+  padding: 2px 6px 4px;
+  border-bottom: 1px solid var(--color-border);
+  margin-bottom: 4px;
+  letter-spacing: 0.5px;
 }
 
 .metric-toggle {
   display: flex;
   align-items: center;
-  gap: 4px;
-  font-size: 10px;
+  gap: 5px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--color-text-tertiary);
   cursor: pointer;
-  padding: 2px 4px;
+  padding: 3px 6px;
   border-radius: 4px;
   transition: all 0.15s;
+  user-select: none;
+}
+
+.metric-toggle:hover {
+  background: var(--color-primary-light);
 }
 
 .metric-toggle.active {
   color: var(--color-primary);
   background: var(--color-primary-light);
+}
+
+.toggle-check {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border: 1.5px solid var(--color-border);
+  border-radius: 3px;
+  font-size: 10px;
+  line-height: 1;
+  transition: all 0.15s;
+  flex-shrink: 0;
+}
+
+.metric-toggle.active .toggle-check {
+  background: var(--color-primary);
+  border-color: var(--color-primary);
+  color: #fff;
+}
+
+.toggle-label {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
 }
 
 .metric-toggle input {

@@ -358,11 +358,11 @@ onBeforeUnmount(clearPreviews)
   align-items: center;
   justify-content: space-between;
   width: 100%;
-  padding: 6px 12px;
+  padding: 8px 16px;
   background: transparent;
   border: none;
   cursor: pointer;
-  font-size: 12px;
+  font-size: 13px;
   font-weight: 600;
   color: var(--color-text-secondary);
   transition: var(--transition-smooth);
@@ -383,7 +383,7 @@ onBeforeUnmount(clearPreviews)
 }
 
 .algo-info-content {
-  padding: 8px 12px 12px;
+  padding: 12px 16px 16px;
 }
 
 /* ===== Responsive ===== */
