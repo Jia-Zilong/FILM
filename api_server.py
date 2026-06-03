@@ -46,15 +46,12 @@ def validate_image_payload(data: bytes, field_name: str = "image"):
         raise HTTPException(status_code=400, detail=f"{field_name} is not a valid image file")
 
 
-def validate_same_size(size_a, size_b):
-    if size_a != size_b:
-        raise HTTPException(
-            status_code=400,
-            detail=(
-                "Input images must have the same dimensions: "
-                f"{size_a[0]}x{size_a[1]} vs {size_b[0]}x{size_b[1]}"
-            )
-        )
+def align_cv_image(ref: np.ndarray, mov: np.ndarray) -> np.ndarray:
+    """将 mov resize 到与 ref 相同尺寸。"""
+    h, w = ref.shape[:2]
+    if mov.shape[:2] != (h, w):
+        mov = cv2.resize(mov, (w, h), interpolation=cv2.INTER_LANCZOS4)
+    return mov
 
 
 async def read_and_validate(file: UploadFile, field_name: str = "image", strict_content_type: bool = True):
@@ -181,13 +178,16 @@ async def fuse_images(
             raise HTTPException(status_code=400, detail="AI融合需要2张图片")
 
         file_data = []
-        for f in files:
+        for i, f in enumerate(files):
+            validate_image(f, f"image_{i}")
             data = await f.read()
+            if len(data) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=400, detail=f"image_{i} 文件过大")
+            validate_image_payload(data, f"image_{i}")
             file_data.append(data)
 
         fused_bytes = film_engine.fuse(file_data[0], file_data[1], quality=quality, max_dim=max_dim)
 
-        os.makedirs(save_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         save_filename = f"fused_{timestamp}.jpg"
         save_path = save_dir / save_filename
@@ -232,9 +232,9 @@ async def fuse_multi_images(
             data_list.append(data)
             sizes.append(validate_image_payload(data, f"image_{i}"))
 
-        # Check all same size
+        # Auto-align: log size differences, engine handles resize
         if not all(s == sizes[0] for s in sizes):
-            raise HTTPException(status_code=400, detail="所有输入图像必须尺寸一致")
+            print(f"[ALIGN] 图像尺寸不一致，将自动对齐到第一张: {sizes}")
 
         if film_engine is None:
             raise HTTPException(status_code=503, detail="FILM Fusion engine is not ready")
@@ -244,6 +244,7 @@ async def fuse_multi_images(
             result = cv2.imdecode(np.frombuffer(data_list[0], np.uint8), cv2.IMREAD_COLOR)
             for i in range(1, len(data_list)):
                 img = cv2.imdecode(np.frombuffer(data_list[i], np.uint8), cv2.IMREAD_COLOR)
+                img = align_cv_image(result, img)
                 if algo_type == "avg":
                     result = cv2.addWeighted(result, 0.5, img, 0.5, 0)
                 elif algo_type == "max":
@@ -256,7 +257,6 @@ async def fuse_multi_images(
         # AI/FFMEF: use engine's pairwise fusion
         fused_bytes = film_engine.fuse_multi(data_list, quality=quality, max_dim=max_dim)
 
-        os.makedirs(save_dir, exist_ok=True)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
         save_filename = f"fused_multi_{timestamp}.jpg"
         save_path = save_dir / save_filename
@@ -289,8 +289,13 @@ async def fuse_ffmef(
             raise HTTPException(status_code=400, detail="FFMEF融合需要2张图片")
 
         data_list = []
-        for f in files:
-            data_list.append(await f.read())
+        for i, f in enumerate(files):
+            validate_image(f, f"image_{i}")
+            data = await f.read()
+            if len(data) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=400, detail=f"image_{i} 文件过大")
+            validate_image_payload(data, f"image_{i}")
+            data_list.append(data)
 
         import torch
 
@@ -303,9 +308,14 @@ async def fuse_ffmef(
         if img1 is None or img2 is None:
             raise HTTPException(status_code=400, detail="无法解码图像，请检查文件是否损坏")
 
-        # Convert to YCbCr, extract Y channel
-        y1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)[:, :, 0]
-        y2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)[:, :, 0]
+        # Feature-based alignment for hand-held photos
+        img2 = align_cv_image(img1, img2)
+
+        # Convert to YCbCr once and split channels
+        ycc1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)
+        ycc2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)
+        y1, cr1, cb1 = ycc1[:, :, 0], ycc1[:, :, 1], ycc1[:, :, 2]
+        y2, cr2, cb2 = ycc2[:, :, 0], ycc2[:, :, 1], ycc2[:, :, 2]
 
         # Normalize Y to [0, 1] as float32 tensors
         y1_tensor = torch.from_numpy(y1.astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0).to(device)
@@ -318,18 +328,14 @@ async def fuse_ffmef(
         # Convert fused Y [0,1] to [0,255] uint8
         fused_y_np = (fused_y.squeeze(0).squeeze(0).cpu().numpy() * 255.0).astype(np.uint8)
 
-        # Merge with averaged Cb/Cr
-        cb1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)[:, :, 1]
-        cr1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)[:, :, 2]
-        cb2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)[:, :, 1]
-        cr2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)[:, :, 2]
-        cb_fused = ((cb1.astype(np.float32) + cb2.astype(np.float32)) / 2).astype(np.uint8)
+        # Merge with averaged Cr/Cb (note: cv2 YCrCb order is Y, Cr, Cb)
         cr_fused = ((cr1.astype(np.float32) + cr2.astype(np.float32)) / 2).astype(np.uint8)
+        cb_fused = ((cb1.astype(np.float32) + cb2.astype(np.float32)) / 2).astype(np.uint8)
 
-        fused_ycrcb = cv2.merge([fused_y_np, cb_fused, cr_fused])
-        fused_rgb = cv2.cvtColor(fused_ycrcb, cv2.COLOR_YCrCb2RGB)
+        fused_ycrcb = cv2.merge([fused_y_np, cr_fused, cb_fused])
+        fused_bgr = cv2.cvtColor(fused_ycrcb, cv2.COLOR_YCrCb2BGR)
 
-        _, buffer = cv2.imencode('.jpg', cv2.cvtColor(fused_rgb, cv2.COLOR_RGB2BGR))
+        _, buffer = cv2.imencode('.jpg', fused_bgr, [int(cv2.IMWRITE_JPEG_QUALITY), quality])
         return Response(content=buffer.tobytes(), media_type="image/jpeg")
 
     except HTTPException:
@@ -348,15 +354,26 @@ async def fuse_traditional(
         max_dim: int = Form(1024),
 ):
     try:
+        if len(files) != 2:
+            raise HTTPException(status_code=400, detail="传统融合需要2张图片")
+
         data_list = []
-        for f in files:
-            data_list.append(await f.read())
+        for i, f in enumerate(files):
+            validate_image(f, f"image_{i}")
+            data = await f.read()
+            if len(data) > MAX_FILE_SIZE:
+                raise HTTPException(status_code=400, detail=f"image_{i} 文件过大")
+            validate_image_payload(data, f"image_{i}")
+            data_list.append(data)
 
         img1 = cv2.imdecode(np.frombuffer(data_list[0], np.uint8), cv2.IMREAD_COLOR)
         img2 = cv2.imdecode(np.frombuffer(data_list[1], np.uint8), cv2.IMREAD_COLOR)
 
         if img1 is None or img2 is None:
             raise HTTPException(status_code=400, detail="无法解码图像，请检查文件是否损坏")
+
+        # Feature-based alignment for hand-held photos
+        img2 = align_cv_image(img1, img2)
 
         if algo_type == "avg":
             fused = cv2.addWeighted(img1, 0.5, img2, 0.5, 0)
@@ -460,8 +477,16 @@ async def evaluate_image(
 
             def _compute_vif_qabf():
                 try:
-                    over_gray = np.array(Image.open(io.BytesIO(over_data)).convert('L')).astype(np.float32)
-                    under_gray = np.array(Image.open(io.BytesIO(under_data)).convert('L')).astype(np.float32)
+                    fused_h, fused_w = fused_float.shape[:2]
+                    over_pil = Image.open(io.BytesIO(over_data)).convert('L')
+                    under_pil = Image.open(io.BytesIO(under_data)).convert('L')
+                    # Resize source images to match fused image dimensions
+                    if over_pil.size != (fused_w, fused_h):
+                        over_pil = over_pil.resize((fused_w, fused_h), Image.LANCZOS)
+                    if under_pil.size != (fused_w, fused_h):
+                        under_pil = under_pil.resize((fused_w, fused_h), Image.LANCZOS)
+                    over_gray = np.array(over_pil).astype(np.float32)
+                    under_gray = np.array(under_pil).astype(np.float32)
                     if 'VIF' in slow_selected:
                         vif_val = round(float(Evaluator.VIF(fused_float, over_gray, under_gray)), 4)
                     else:
@@ -608,11 +633,11 @@ async def fuse_compare(
             if img1 is None or img2 is None:
                 raise RuntimeError("FFMEF image decode failed")
 
-            y1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)[:, :, 0]
-            y2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)[:, :, 0]
+            ycc1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)
+            ycc2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)
 
-            y1_t = torch.from_numpy(y1.astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0).to(device)
-            y2_t = torch.from_numpy(y2.astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0).to(device)
+            y1_t = torch.from_numpy(ycc1[:, :, 0].astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0).to(device)
+            y2_t = torch.from_numpy(ycc2[:, :, 0].astype(np.float32) / 255.0).unsqueeze(0).unsqueeze(0).to(device)
 
             with torch.no_grad():
                 fused_y = model(img0_RGB=None, img0_Y=y1_t, img1_RGB=None, img1_Y=y2_t)
@@ -620,16 +645,12 @@ async def fuse_compare(
 
             fused_y_np = (fused_y.squeeze(0).squeeze(0).cpu().numpy() * 255.0).astype(np.uint8)
 
-            cb1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)[:, :, 1]
-            cr1 = cv2.cvtColor(img1, cv2.COLOR_BGR2YCrCb)[:, :, 2]
-            cb2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)[:, :, 1]
-            cr2 = cv2.cvtColor(img2, cv2.COLOR_BGR2YCrCb)[:, :, 2]
-            cb_f = ((cb1.astype(np.float32) + cb2.astype(np.float32)) / 2).astype(np.uint8)
-            cr_f = ((cr1.astype(np.float32) + cr2.astype(np.float32)) / 2).astype(np.uint8)
+            cr_f = ((ycc1[:, :, 1].astype(np.float32) + ycc2[:, :, 1].astype(np.float32)) / 2).astype(np.uint8)
+            cb_f = ((ycc1[:, :, 2].astype(np.float32) + ycc2[:, :, 2].astype(np.float32)) / 2).astype(np.uint8)
 
-            fused_ycrcb = cv2.merge([fused_y_np, cb_f, cr_f])
-            fused_rgb = cv2.cvtColor(fused_ycrcb, cv2.COLOR_YCrCb2BGR)
-            return fused_rgb
+            fused_ycrcb = cv2.merge([fused_y_np, cr_f, cb_f])
+            fused_bgr = cv2.cvtColor(fused_ycrcb, cv2.COLOR_YCrCb2BGR)
+            return fused_bgr
 
         # ---------- run all 5 algorithms ----------
         _run_algo("ai", _ai_fuse)

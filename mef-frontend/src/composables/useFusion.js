@@ -110,7 +110,6 @@ export function useFusion() {
     } finally {
       isFusing.value = false
     }
-    return false
   }
 
   const pollForVifQabf = () => {
@@ -214,7 +213,6 @@ export function useFusion() {
     } finally {
       isComparing.value = false
     }
-    return false
   }
 
   return {

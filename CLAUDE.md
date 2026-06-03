@@ -33,7 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
   - `src/App.vue` — Layout shell (~80 lines), assembles sub-components
   - `src/config/api.js` — API base URL (`VITE_API_BASE_URL` env var, defaults to `http://127.0.0.1:8000`)
   - `src/composables/` — Shared logic: `useFusion.js` (API + state), `useHistory.js` (history + CSV export)
-  - `src/components/` — `AppHeader.vue`, `DraggableUpload.vue`, `AlgorithmSelector.vue`, `FusionViewer.vue`, `MetricsDashboard.vue`, `HistoryDrawer.vue`
+  - `src/components/` — `AppHeader.vue`, `DraggableUpload.vue`, `AlgorithmSelector.vue`, `FusionViewer.vue`, `MetricsDashboard.vue`, `HistoryDrawer.vue`, `ComparisonView.vue`, `ImageList.vue`, `ParamPanel.vue`, `AlgorithmInfo.vue`
   - `src/style.css` — Global CSS variables (color system, spacing, radius, fonts)
 - `api_server.py` — FastAPI REST API server (port 8000)
 - `mef_engine.py` — MEF fusion inference engine (YCbCr color space: neural net processes Y channel only, Cb/Cr blended at 50/50)
@@ -46,6 +46,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - `storage/results/` — Server output: fused images (`fused_*.jpg`), evaluation results (`eval_*.jpg`), server logs (`api_server.err.log`, `api_server.out.log`)
 - `mef_history.db` — SQLite database with schema: `history(id, algo, img_url, time, en, sd, sf, ag, vif, qabf)`
 - `test_api.py`, `test_eval2.py`, `test_evaluate.py`, `test_evaluate2.py` — Ad-hoc test scripts for API endpoints and evaluation logic
+- `docs/` — Design specs and architecture plans (e.g., `docs/superpowers/specs/` for architecture redesign proposals)
+- `docs/baseline_metrics.json` — Baseline metric values for MEFB test set (used to compare architecture changes)
 
 ## Development Commands
 
@@ -106,6 +108,7 @@ python api_server.py
 #   POST /api/fuse/traditional — Traditional algorithms (avg, max, mertens via algo_type form field)
 #   POST /api/evaluate      — Two-phase evaluation: fast metrics (EN/SD/SF/AG) returned immediately; VIF/Qabf computed in background task when source images provided, then DB record updated. `algo` form field defaults to "AI".
 #   GET  /api/history       — Query processing history (SQLite, last 20 records)
+# All fusion endpoints accept `files[]` multipart field (unified interface, not over_img/under_img)
 # All POST endpoints validate: file type (jpeg/png/bmp/webp), file size (<=20MB)
 # Starlette form parser limits are overridden to 50MB (MAX_PART_SIZE, MAX_FILE_SIZE) to allow large base64 image fields
 # Server logs: storage/api_server.out.log, storage/api_server.err.log
@@ -126,7 +129,7 @@ npm run preview   # Preview production build
 ### Two-Component System
 
 1. **Research backend**: PyTorch model for image fusion guided by text semantics. Four fusion tasks (IVF/MIF/MEF/MFF) share the same `Net` architecture, with separate pretrained checkpoints.
-2. **Web application**: The `mef-frontend` (Vue 3 SPA, plain JavaScript — no TypeScript) communicates with `api_server.py` (FastAPI) over HTTP. The frontend uses a two-column layout: left panel (320px) for source image uploads + algorithm selection, right panel for fusion viewer with before/after slider and ECharts metrics visualization. The API loads the PyTorch FILM model at startup via `MEFFusionEngine`, performs inference, saves results to `storage/results/`, and logs history to `mef_history.db` (SQLite table: `history(id, algo, img_url, time, en, sd, sf, ag, vif, qabf)`).
+2. **Web application**: The `mef-frontend` (Vue 3 SPA, plain JavaScript — no TypeScript) communicates with `api_server.py` (FastAPI) over HTTP. The frontend uses a two-column layout: left panel (320px) for source image uploads + algorithm selection, right panel for fusion viewer with before/after slider and ECharts metrics visualization. Includes a `ComparisonView` for running multiple algorithms side-by-side with radar/bar chart comparisons. All fusion endpoints accept a unified `files[]` multipart field (not `over_img`/`under_img`). The API loads the PyTorch FILM model at startup via `MEFFusionEngine`, performs inference, saves results to `storage/results/`, and logs history to `mef_history.db` (SQLite table: `history(id, algo, img_url, time, en, sd, sf, ag, vif, qabf)`).
 
 ### FFMEF Comparison Engine
 
@@ -141,9 +144,13 @@ The `compare_methods/FFMEF/` submodule adds a competing deep learning method (FF
 
 `Net` in `net/Film.py`:
 - 3 cascaded `restormer_cablock` stages (first takes 1-channel input, others take `mid_channel`)
-- Each `restormer_cablock`: processes image A and B through separate Restormer TransformerBlocks → projects to text-feature space → cross-attention with text as query, image features as key/value → pools + normalizes + reshapes back to spatial → concatenates original + text-guided features through 1x1 conv + PReLU
+- Each `restormer_cablock`: processes image A and B through separate Restormer TransformerBlocks → cross-attention mechanism → concatenates features through 1x1 conv + PReLU
 - Concatenates features from A and B, then 3 Restormer TransformerBlocks for fusion
 - Two 1x1 conv layers for dimension reduction and output, sigmoid activation for final fusion mask
+
+**Architecture variants** (active development — check `net/Film.py` for current state):
+- **Text-guided (original)**: Uses BLIP2 text embeddings as query in CrossAttention, image features as key/value. Projects image features to text space via `imagefeature2textfeature`. Requires `text` argument in forward pass.
+- **Cross-Image Attention (experimental)**: Replaces text guidance with direct image-to-image attention. Image A queries image B and vice versa. Removes text dependency entirely. See `docs/superpowers/specs/2026-05-21-film-architecture-design.md` for design rationale.
 
 Key supporting classes in `net/Film.py`:
 - `CrossAttention` — wraps `nn.MultiheadAttention` with transpose handling for NLP-style `(seq_len, batch, dim)` input
@@ -164,6 +171,8 @@ Supporting blocks in `net/restormer.py`:
 3. Min-max normalize the network output
 4. Blend Cb/Cr channels with 0.5 alpha (classical weighted average)
 5. Merge Y+Cb+Cr back to YCbCr, convert to RGB, save as JPEG
+
+For N>2 images, `fuse_multi` performs pairwise iterative fusion: [img1+img2]→fused12, [fused12+img3]→fused123, etc. Auto-scales images exceeding `max_dim` (default 1024px) to prevent GPU OOM.
 
 ### Data Pipeline
 
@@ -221,6 +230,7 @@ The VLF Dataset images exceed 4GB and are not included in the repo — they must
 - Training output structure: experiments saved in `exp/{timestamp}_epochs_{N}_lr_{lr}_.../` — the `save_path` variable in `train.py` (line 89) controls the base directory. Subfolders: `code/` (model snapshot), `model/` (epoch checkpoints), `pic_fusion/` (visual results), plus `log.txt` and `param.json`.
 - No TypeScript in frontend — plain JavaScript (`.js` files), no `tsconfig.json`.
 - No existing AI assistant config: no `.cursorrules`, `.cursor/rules/`, or `.github/copilot-instructions.md`.
+- **Architecture in flux**: The model architecture (`net/Film.py`) is under active experimentation. The committed version may differ from the working copy — always check `git diff` before making assumptions about the current `Net` forward signature (it may or may not accept a `text` argument depending on which variant is active). The `mef_engine.py` and `train.py` must stay in sync with `Film.py`'s forward signature.
 - **Server logs**: stdout/stderr are redirected to `storage/api_server.out.log` and `storage/api_server.err.log`.
 - **SQLite schema extended**: The history table now includes `vif` and `qabf` columns (beyond the original EN/SD/SF/AG). The `/api/evaluate` endpoint writes a placeholder record immediately (VIF=0, Qabf=0) with fast metrics, then the background task updates those fields in-place. The frontend polls for updated values.
 - **FFMEF submodule**: `compare_methods/FFMEF/` is a git submodule — run `git submodule update --init --recursive` after cloning to fetch it. It has its own dependencies and training scripts; the main project only uses its pretrained inference model.

@@ -4,6 +4,15 @@ import * as echarts from 'echarts'
 
 const ALL_METRICS = ['EN', 'SD', 'SF', 'AG', 'VIF', 'Qabf']
 
+const METRIC_TIPS = {
+  EN: '信息熵 — 信息量丰富度',
+  SD: '标准差 — 对比度',
+  SF: '空间频率 — 纹理清晰度',
+  AG: '平均梯度 — 边缘锐度',
+  VIF: '视觉保真度 — 结构保持',
+  Qabf: '边缘转移量 — 源图信息保留',
+}
+
 const props = defineProps({
   metrics: { type: Object, default: null },
   fusionTime: { type: Number, default: null },
@@ -46,8 +55,17 @@ const getMetricValue = (label) => {
   if (!props.metrics) return '--'
   const val = props.metrics[label]
   if (val === null || val === undefined) return '--'
-  if (typeof val === 'number') return val.toFixed(4)
+  if (typeof val === 'number') {
+    if (val === 0 && (label === 'VIF' || label === 'Qabf')) return '计算中...'
+    return val.toFixed(4)
+  }
   return '--'
+}
+
+const isMetricPending = (label) => {
+  if (!props.metrics) return false
+  const val = props.metrics[label]
+  return val === 0 && (label === 'VIF' || label === 'Qabf')
 }
 
 const getRadarValues = () => {
@@ -179,12 +197,13 @@ onBeforeUnmount(() => {
     <div v-if="fusedImageUrl" class="metrics-bar">
       <!-- Metric selection checkboxes with header -->
       <div class="metric-toggles">
-        <div class="toggle-header">指标</div>
+        <div class="section-header">指标</div>
         <label
           v-for="m in ALL_METRICS"
           :key="m"
           class="metric-toggle"
           :class="{ active: effectiveMetrics.includes(m) }"
+          :title="METRIC_TIPS[m]"
         >
           <input type="checkbox" :checked="effectiveMetrics.includes(m)" @change="toggleMetric(m)" />
           <span class="toggle-check">{{ effectiveMetrics.includes(m) ? '✓' : '' }}</span>
@@ -194,26 +213,34 @@ onBeforeUnmount(() => {
 
       <!-- Metric values -->
       <div v-if="metrics" class="metrics-values">
+        <div class="section-header">数值</div>
         <div
           v-for="m in effectiveMetrics"
           :key="m"
+          class="metric-row"
+          :title="METRIC_TIPS[m]"
         >
           <span class="metric-label">{{ m }}</span>
-          <span class="metric-value">{{ getMetricValue(m) }}</span>
+          <span class="metric-value" :class="{ pending: getMetricValue(m) === '--' || isMetricPending(m) }">
+            {{ getMetricValue(m) }}
+          </span>
         </div>
       </div>
 
       <!-- Charts -->
       <div v-if="metrics && effectiveMetrics.length > 0" class="chart-section">
+        <div class="section-header">雷达图</div>
         <div ref="chartRef" class="radar-chart"></div>
       </div>
 
       <div v-if="metrics && effectiveMetrics.length > 0" class="chart-section flex-grow">
+        <div class="section-header">柱状图</div>
         <div ref="barChartRef" class="bar-chart"></div>
       </div>
 
       <!-- Perf info + download -->
       <div class="perf-info">
+        <div class="section-header">信息</div>
         <span class="perf-item" v-if="fusionTime">
           <span class="perf-label">耗时</span>
           <span class="perf-value">{{ fusionTime }}ms</span>
@@ -234,7 +261,7 @@ onBeforeUnmount(() => {
 <style scoped>
 .metrics-bar {
   display: flex;
-  align-items: stretch;
+  align-items: flex-start;
   gap: 12px;
   padding: 10px 14px;
   background: var(--color-glass);
@@ -244,17 +271,8 @@ onBeforeUnmount(() => {
   box-shadow: var(--shadow-glass);
 }
 
-.metric-toggles {
-  display: flex;
-  flex-direction: column;
-  gap: 2px;
-  min-width: 72px;
-  flex-shrink: 0;
-  justify-content: flex-start;
-  padding-top: 4px;
-}
-
-.toggle-header {
+/* Unified section header — ensures all columns start at the same baseline */
+.section-header {
   font-size: 11px;
   font-weight: 700;
   color: var(--color-text-secondary);
@@ -262,6 +280,15 @@ onBeforeUnmount(() => {
   border-bottom: 1px solid var(--color-border);
   margin-bottom: 4px;
   letter-spacing: 0.5px;
+  white-space: nowrap;
+}
+
+.metric-toggles {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 72px;
+  flex-shrink: 0;
 }
 
 .metric-toggle {
@@ -320,7 +347,7 @@ onBeforeUnmount(() => {
 .metrics-values {
   display: flex;
   flex-direction: column;
-  gap: 3px;
+  gap: 2px;
   min-width: 130px;
   flex-shrink: 0;
 }
@@ -328,7 +355,15 @@ onBeforeUnmount(() => {
 .metric-row {
   display: flex;
   justify-content: space-between;
+  align-items: center;
   font-size: 11px;
+  padding: 3px 6px;
+  border-radius: 4px;
+  transition: background 0.15s;
+}
+
+.metric-row:hover {
+  background: var(--color-bg-subtle);
 }
 
 .metric-label {
@@ -343,7 +378,19 @@ onBeforeUnmount(() => {
   font-size: 11px;
 }
 
+.metric-value.pending {
+  color: var(--color-text-tertiary);
+  animation: pulse-text 1.5s ease-in-out infinite;
+}
+
+@keyframes pulse-text {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.4; }
+}
+
 .chart-section {
+  display: flex;
+  flex-direction: column;
   min-width: 140px;
   flex-shrink: 0;
 }
@@ -354,20 +401,19 @@ onBeforeUnmount(() => {
 }
 
 .radar-chart {
-  height: 140px;
+  height: 130px;
   width: 100%;
 }
 
 .bar-chart {
-  height: 140px;
+  height: 130px;
   width: 100%;
 }
 
 .perf-info {
   display: flex;
   flex-direction: column;
-  justify-content: center;
-  gap: 6px;
+  gap: 4px;
   min-width: 100px;
   flex-shrink: 0;
 }
@@ -377,6 +423,7 @@ onBeforeUnmount(() => {
   align-items: baseline;
   gap: 4px;
   font-size: 10px;
+  padding: 2px 6px;
 }
 
 .perf-label {
@@ -392,7 +439,9 @@ onBeforeUnmount(() => {
 .download-btn {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 4px;
+  margin-top: 4px;
   padding: 6px 14px;
   background: linear-gradient(135deg, #2563EB 0%, #1D4ED8 100%);
   color: #fff;
