@@ -32,7 +32,6 @@ VLFDataset_h5/
 # Output and generated files
 test_output/
 storage/
-images/
 img/
 mef_history.db
 
